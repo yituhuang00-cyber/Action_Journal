@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { getExerciseFeelingText, hasText } from '../lib/actionRecord'
 import SidebarExercises from '../components/SidebarExercises'
 import ExerciseReview from '../components/ExerciseReview'
 import {
@@ -60,6 +61,11 @@ export default function ExerciseDetail() {
     if (status === 'doing') return '正在做'
     if (status === 'done') return '做完了'
     return '想要做'
+  }
+
+  function renderExerciseTextRow(label, value) {
+    if (!hasText(value)) return null
+    return <div className="action-kv-full action-kv-text"><strong>{label}：</strong>{value}</div>
   }
 
   const load = useCallback(() => {
@@ -382,9 +388,9 @@ export default function ExerciseDetail() {
                         <div className="action-kv-grid">
                           <div><strong>唤醒度：</strong>{action.scores?.arousal ?? '-'}</div>
                           <div><strong>效价：</strong>{action.scores?.valence ?? '-'}</div>
-                          <div className="action-kv-full action-kv-text"><strong>运动内容：</strong>{action.content || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>Bingo区：</strong>{action.bingo || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>庆祝小活动：</strong>{action.celebration || <span className="muted">无</span>}</div>
+                          {renderExerciseTextRow('运动内容', action.content)}
+                          {renderExerciseTextRow('运动感受', getExerciseFeelingText(action))}
+                          {renderExerciseTextRow('庆祝小活动', action.celebration)}
                           {(action.workExperienceTitle || action.workExperienceHtml) && (
                             <div className="action-kv-full action-work-experience-row">
                               <strong>运动经验：</strong>

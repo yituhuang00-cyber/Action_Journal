@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { getActionFeelingText, hasExpectedDuration, hasText } from '../lib/actionRecord'
 import SidebarGoals from '../components/SidebarGoals'
 import ActionTimer from '../components/ActionTimer'
 import ActionReview from '../components/ActionReview'
@@ -145,6 +146,11 @@ export default function GoalDetail() {
     if (!hours) return `${remainingMinutes}分钟`
     if (!remainingMinutes) return `${hours}小时`
     return `${hours}小时${remainingMinutes}分钟`
+  }
+
+  function renderActionTextRow(label, value) {
+    if (!hasText(value)) return null
+    return <div className="action-kv-full action-kv-text"><strong>{label}：</strong>{value}</div>
   }
 
   function getStatusText(status) {
@@ -767,13 +773,11 @@ export default function GoalDetail() {
                         <div className="action-kv-grid">
                           <div><strong>唤醒度：</strong>{a.scores?.arousal ?? '-'}</div>
                           <div><strong>效价：</strong>{a.scores?.valence ?? '-'}</div>
-                          <div><strong>预期时长：</strong>{formatExpectedDuration(a.expectedDurationMinutes)}</div>
-                          <div className="action-kv-full action-kv-text"><strong>预期目标：</strong>{a.expectedOutcome || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>行动内容：</strong>{a.content || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>吐槽区：</strong>{a.rant || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>Bingo区：</strong>{a.bingo || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>庆祝小活动：</strong>{a.celebration || <span className="muted">无</span>}</div>
-                          <div className="action-kv-full action-kv-text"><strong>下一步行动：</strong>{a.nextAction || a.notes || <span className="muted">无</span>}</div>
+                          {hasExpectedDuration(a.expectedDurationMinutes) ? <div><strong>预期时长：</strong>{formatExpectedDuration(a.expectedDurationMinutes)}</div> : null}
+                          {renderActionTextRow('行动内容', a.content)}
+                          {renderActionTextRow('行动感受', getActionFeelingText(a))}
+                          {renderActionTextRow('庆祝小活动', a.celebration)}
+                          {renderActionTextRow('下一步行动', a.nextAction || a.notes || '')}
                           {(a.workExperienceTitle || a.workExperienceHtml) && (
                             <div className="action-kv-full action-work-experience-row">
                               <strong>工作经验：</strong>

@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
+import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord'
 
 const LEGACY_APP_STATE_TABLE = 'app_states'
 
@@ -50,6 +51,21 @@ function ensureObject(value, fallback = {}) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : fallback
 }
 
+function hasLegacyActionRows(actions = []) {
+  return actions.some((action) => {
+    const bingo = typeof action?.bingo === 'string' ? action.bingo.trim() : ''
+    const expectedOutcome = typeof action?.expected_outcome === 'string' ? action.expected_outcome.trim() : ''
+    return Boolean(bingo || (action?.end_time && expectedOutcome))
+  })
+}
+
+function hasLegacyExerciseActionRows(actions = []) {
+  return actions.some((action) => {
+    const bingo = typeof action?.bingo === 'string' ? action.bingo.trim() : ''
+    return Boolean(bingo)
+  })
+}
+
 function buildNormalizedRows(userId, state) {
   const goals = Object.values(state.goals || {})
   const actions = Object.values(state.actions || {})
@@ -86,25 +102,28 @@ function buildNormalizedRows(userId, state) {
       created_at: subTarget.createdAt || new Date().toISOString(),
       updated_at: subTarget.updatedAt || new Date().toISOString(),
     }))),
-    actions: actions.map((action) => ({
-      id: action.id,
-      user_id: userId,
-      goal_id: action.goalId || '',
-      start_time: action.startTime || null,
-      end_time: action.endTime || null,
-      expected_duration_minutes: action.expectedDurationMinutes ?? null,
-      expected_outcome: action.expectedOutcome || '',
-      content: action.content || '',
-      next_action: action.nextAction || '',
-      scores: ensureObject(action.scores, { arousal: 0, valence: 0 }),
-      rant: action.rant || '',
-      bingo: action.bingo || '',
-      celebration: action.celebration || '',
-      work_experience_title: action.workExperienceTitle || '',
-      work_experience_html: action.workExperienceHtml || '',
-      created_at: action.createdAt || new Date().toISOString(),
-      updated_at: action.updatedAt || new Date().toISOString(),
-    })),
+    actions: actions.map((action) => {
+      const normalizedAction = normalizeActionRecord(action, action.id)
+      return {
+        id: normalizedAction.id,
+        user_id: userId,
+        goal_id: normalizedAction.goalId || '',
+        start_time: normalizedAction.startTime || null,
+        end_time: normalizedAction.endTime || null,
+        expected_duration_minutes: normalizedAction.expectedDurationMinutes ?? null,
+        expected_outcome: normalizedAction.expectedOutcome || '',
+        content: normalizedAction.content || '',
+        next_action: normalizedAction.nextAction || '',
+        scores: ensureObject(normalizedAction.scores, { arousal: 0, valence: 0 }),
+        rant: normalizedAction.rant || '',
+        bingo: normalizedAction.bingo || '',
+        celebration: normalizedAction.celebration || '',
+        work_experience_title: normalizedAction.workExperienceTitle || '',
+        work_experience_html: normalizedAction.workExperienceHtml || '',
+        created_at: normalizedAction.createdAt || new Date().toISOString(),
+        updated_at: normalizedAction.updatedAt || new Date().toISOString(),
+      }
+    }),
     exerciseGoals: exerciseGoals.map((goal) => ({
       id: goal.id,
       user_id: userId,
@@ -117,22 +136,25 @@ function buildNormalizedRows(userId, state) {
       created_at: goal.createdAt || new Date().toISOString(),
       updated_at: goal.updatedAt || new Date().toISOString(),
     })),
-    exerciseActions: exerciseActions.map((action) => ({
-      id: action.id,
-      user_id: userId,
-      goal_id: action.goalId || '',
-      start_time: action.startTime || null,
-      end_time: action.endTime || null,
-      exercise_name: action.exerciseName || '',
-      content: action.content || '',
-      scores: ensureObject(action.scores, { arousal: 0, valence: 0 }),
-      bingo: action.bingo || '',
-      celebration: action.celebration || '',
-      work_experience_title: action.workExperienceTitle || '',
-      work_experience_html: action.workExperienceHtml || '',
-      created_at: action.createdAt || new Date().toISOString(),
-      updated_at: action.updatedAt || new Date().toISOString(),
-    })),
+    exerciseActions: exerciseActions.map((action) => {
+      const normalizedAction = normalizeExerciseRecord(action, action.id)
+      return {
+        id: normalizedAction.id,
+        user_id: userId,
+        goal_id: normalizedAction.goalId || '',
+        start_time: normalizedAction.startTime || null,
+        end_time: normalizedAction.endTime || null,
+        exercise_name: normalizedAction.exerciseName || '',
+        content: normalizedAction.content || '',
+        scores: ensureObject(normalizedAction.scores, { arousal: 0, valence: 0 }),
+        bingo: normalizedAction.bingo || '',
+        celebration: normalizedAction.celebration || '',
+        work_experience_title: normalizedAction.workExperienceTitle || '',
+        work_experience_html: normalizedAction.workExperienceHtml || '',
+        created_at: normalizedAction.createdAt || new Date().toISOString(),
+        updated_at: normalizedAction.updatedAt || new Date().toISOString(),
+      }
+    }),
     writingTemplates: writingTemplates.map((template) => ({
       id: template.id,
       user_id: userId,
@@ -244,7 +266,7 @@ function composeStateFromRows(rows) {
   })
 
   rows.actions.forEach((action) => {
-    state.actions[action.id] = {
+    state.actions[action.id] = normalizeActionRecord({
       id: action.id,
       goalId: action.goal_id || '',
       startTime: action.start_time || null,
@@ -261,7 +283,7 @@ function composeStateFromRows(rows) {
       workExperienceHtml: action.work_experience_html || '',
       createdAt: action.created_at || new Date().toISOString(),
       updatedAt: action.updated_at || action.created_at || new Date().toISOString(),
-    }
+    }, action.id)
   })
 
   rows.exerciseGoals.forEach((goal) => {
@@ -279,7 +301,7 @@ function composeStateFromRows(rows) {
   })
 
   rows.exerciseActions.forEach((action) => {
-    state.exerciseActions[action.id] = {
+    state.exerciseActions[action.id] = normalizeExerciseRecord({
       id: action.id,
       goalId: action.goal_id || '',
       startTime: action.start_time || null,
@@ -293,7 +315,7 @@ function composeStateFromRows(rows) {
       workExperienceHtml: action.work_experience_html || '',
       createdAt: action.created_at || new Date().toISOString(),
       updatedAt: action.updated_at || action.created_at || new Date().toISOString(),
-    }
+    }, action.id)
   })
 
   rows.writingTemplates.forEach((template) => {
@@ -424,7 +446,14 @@ export async function fetchNormalizedState(userId) {
   }
 
   const hasRows = Object.values(rows).some((value) => Array.isArray(value) && value.length)
-  return hasRows ? composeStateFromRows(rows) : null
+  if (!hasRows) return null
+
+  const state = composeStateFromRows(rows)
+  if (hasLegacyActionRows(actions) || hasLegacyExerciseActionRows(exerciseActions)) {
+    await persistNormalizedState(userId, state)
+  }
+
+  return state
 }
 
 export async function fetchLegacyCloudState(userId) {

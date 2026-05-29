@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getExerciseFeelingText } from '../lib/actionRecord'
 import { updateExerciseAction } from '../storage/storage'
 
 function isoToLocalInput(iso) {
@@ -17,7 +18,7 @@ function createDraft(action) {
     startTime: isoToLocalInput(action?.startTime),
     endTime: isoToLocalInput(action?.endTime),
     content: action?.content || '',
-    bingo: action?.bingo || '',
+    feeling: getExerciseFeelingText(action),
     celebration: action?.celebration || '',
   }
 }
@@ -53,7 +54,8 @@ export default function ExerciseReview({ action, exerciseTitle = '', onSave, onC
       exerciseName: selectedExerciseLabel,
       content: draft.content,
       scores: { arousal: Number(draft.arousal), valence: Number(draft.valence) },
-      bingo: draft.bingo,
+      feeling: draft.feeling,
+      bingo: '',
       celebration: draft.celebration,
     }
   }
@@ -158,8 +160,8 @@ export default function ExerciseReview({ action, exerciseTitle = '', onSave, onC
             </div>
 
             <div className="review-area exercise-review-area-accent">
-              <div className="review-area-title">Bingo 区</div>
-              <textarea value={draft.bingo} onChange={(event) => setDraft((current) => ({ ...current, bingo: event.target.value }))} placeholder="记录满足、愉悦、成就感（可选）" />
+              <div className="review-area-title">运动感受</div>
+              <textarea value={draft.feeling} onChange={(event) => setDraft((current) => ({ ...current, feeling: event.target.value }))} placeholder="记录疲惫、卡住、满足、愉悦或成就感等真实感受。（可选）" />
             </div>
 
             <div className="review-area exercise-review-area-celebration">

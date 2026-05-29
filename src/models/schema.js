@@ -34,12 +34,13 @@
  *   startTime: ISOString | null,
  *   endTime: ISOString | null,
  *   expectedDurationMinutes: number | null, // 本次行动预期持续时长（分钟）
- *   expectedOutcome: string, // 本次行动结束后期待达成的具体目标
- *   content: string, // 行动内容（做了什么）
+ *   expectedOutcome: string, // 本次行动结束后期待达成的具体目标；行动结束后会自动并入 content
+ *   content: string, // 行动内容（包含从预期目标迁移来的内容）
  *   nextAction: string, // 下一步行动
  *   scores: { arousal: number, valence: number }, // 唤醒度(0-10), 效价(-10..10)
- *   rant: string, // 吐槽区内容
- *   bingo: string, // Bingo 区内容（满足/愉悦/成就）
+ *   feeling: string, // 行动感受（兼容旧 rant/bingo 数据）
+ *   rant: string, // 兼容旧字段；归一化后存储合并后的行动感受
+ *   bingo: string, // 兼容旧字段；归一化后不再单独呈现
  *   celebration: string, // 设计的庆祝事项
  *   workExperienceTitle: string, // 工作经验标题
  *   workExperienceHtml: string, // 富文本工作经验记录（HTML）
@@ -81,7 +82,8 @@
  *   exerciseName: string,
  *   content: string,
  *   scores: { arousal: number, valence: number },
- *   bingo: string,
+ *   feeling: string, // 运动感受（兼容旧 bingo 数据）
+ *   bingo: string, // 兼容旧字段；归一化后不再单独呈现
  *   celebration: string,
  *   workExperienceTitle: string, // 运动经验标题
  *   workExperienceHtml: string, // 富文本运动经验记录（HTML）
@@ -154,6 +156,7 @@ export const exampleAction = {
   content: '写了 300 字草稿，梳理大纲',
   nextAction: '',
   scores: { arousal: 5, valence: 2 },
+  feeling: '',
   rant: '',
   bingo: '',
   celebration: '',

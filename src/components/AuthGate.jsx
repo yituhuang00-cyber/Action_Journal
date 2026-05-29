@@ -56,6 +56,11 @@ export default function AuthGate({ children }) {
   const [status, setStatus] = useState({ loading: true, submitting: false, error: '', message: '' })
   const hadSessionRef = useRef(false)
   const explicitSignOutRef = useRef(false)
+  const onlineRef = useRef(online)
+
+  useEffect(() => {
+    onlineRef.current = online
+  }, [online])
 
   useEffect(() => {
     function handleOnline() {
@@ -88,6 +93,12 @@ export default function AuthGate({ children }) {
 
     async function bootstrap(nextSession) {
       try {
+        if (!onlineRef.current && (nextSession || hasStoredStateSnapshot())) {
+          setLocalMode(true)
+          await initializeStorage({ session: null, forceRefresh: true })
+          return
+        }
+
         await initializeStorage({ session: nextSession, forceRefresh: true })
       } catch (error) {
         if (!cancelled) {
@@ -112,7 +123,10 @@ export default function AuthGate({ children }) {
       const nextSession = data.session ?? null
       hadSessionRef.current = Boolean(nextSession)
       setSession(nextSession)
-      if (!nextSession && !online && !explicitSignOutRef.current) {
+      if (nextSession && !onlineRef.current) {
+        setLocalMode(true)
+      }
+      if (!nextSession && !onlineRef.current && !explicitSignOutRef.current) {
         setLocalMode(true)
       }
       await bootstrap(nextSession)
@@ -130,9 +144,9 @@ export default function AuthGate({ children }) {
       if (nextSession) {
         hadSessionRef.current = true
         explicitSignOutRef.current = false
-        setLocalMode(false)
+        setLocalMode(!onlineRef.current)
       } else {
-        const shouldUseLocalMode = !explicitSignOutRef.current && (!online || hadSessionRef.current || hasStoredStateSnapshot())
+        const shouldUseLocalMode = !explicitSignOutRef.current && (!onlineRef.current || hadSessionRef.current || hasStoredStateSnapshot())
         hadSessionRef.current = false
         setLocalMode(shouldUseLocalMode)
       }
@@ -157,7 +171,7 @@ export default function AuthGate({ children }) {
   }, [client])
 
   useEffect(() => {
-    if (!session) return undefined
+    if (!session || !online) return undefined
 
     function syncOnFocus() {
       void refreshStorageFromCloud()
@@ -311,6 +325,6 @@ export default function AuthGate({ children }) {
   }
 
   return typeof children === 'function'
-    ? children({ session, signOut: handleSignOut, localMode: false, exitLocalMode: () => setLocalMode(false) })
+    ? children({ session, signOut: handleSignOut, localMode, exitLocalMode: () => setLocalMode(false) })
     : children
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { getActionFeelingText } from '../lib/actionRecord'
 import { updateAction } from '../storage/storage'
 
 export default function ActionReview({ action, onSave, onCancel } = {}) {
@@ -10,8 +11,7 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [content, setContent] = useState('')
-  const [rant, setRant] = useState('')
-  const [bingo, setBingo] = useState('')
+  const [feeling, setFeeling] = useState('')
   const [celebration, setCelebration] = useState('')
   const [nextAction, setNextAction] = useState('')
 
@@ -40,8 +40,7 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
     setStartTime(isoToLocalInput(action.startTime))
     setEndTime(isoToLocalInput(action.endTime))
     setContent(action.content || '')
-    setRant(action.rant || '')
-    setBingo(action.bingo || '')
+    setFeeling(getActionFeelingText(action))
     setCelebration(action.celebration || '')
     setNextAction(action.nextAction || action.notes || '')
   }, [action])
@@ -72,8 +71,8 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
       content,
       nextAction,
       scores: { arousal: Number(arousal), valence: Number(valence) },
-      rant,
-      bingo,
+      rant: feeling,
+      bingo: '',
       celebration,
     }
   }
@@ -124,10 +123,6 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
           <div className="review-expectation-item">
             <div className="review-area-title">预期时长</div>
             <div className="review-expectation-value">{formatExpectedDuration(action.expectedDurationMinutes)}</div>
-          </div>
-          <div className="review-expectation-item review-expectation-item-wide">
-            <div className="review-area-title">预期目标</div>
-            <div className="review-expectation-value">{action.expectedOutcome || '未设置'}</div>
           </div>
         </div>
       </div>
@@ -208,17 +203,12 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
           <div className="review-areas">
             <div className="review-area">
               <div className="review-area-title">行动内容</div>
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="这次具体做了什么？（可选）" />
+              <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="这次具体做了什么？开始行动时写下的预期也会合并到这里。（可选）" />
             </div>
 
             <div className="review-area">
-              <div className="review-area-title">吐槽区</div>
-              <textarea value={rant} onChange={(e) => setRant(e.target.value)} placeholder="记录不满与挫折（可选）" />
-            </div>
-
-            <div className="review-area">
-              <div className="review-area-title">Bingo 区</div>
-              <textarea value={bingo} onChange={(e) => setBingo(e.target.value)} placeholder="记录满足、愉悦、成就感（可选）" />
+              <div className="review-area-title">行动感受</div>
+              <textarea value={feeling} onChange={(e) => setFeeling(e.target.value)} placeholder="记录卡住、不满、满足、愉悦或成就感等真实感受。（可选）" />
             </div>
           </div>
 

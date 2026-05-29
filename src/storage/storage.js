@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
+import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord'
 import {
   fetchLegacyCloudState,
   fetchNormalizedState,
@@ -253,22 +254,10 @@ function normalizeExerciseGoal(goal = {}, goalId = goal.id) {
 }
 
 function normalizeExerciseAction(action = {}, actionId = action.id) {
-  const now = new Date().toISOString()
-  return {
+  return normalizeExerciseRecord({
+    ...action,
     id: action.id || actionId || uid('ea-'),
-    goalId: action.goalId || '',
-    startTime: action.startTime || null,
-    endTime: action.endTime || null,
-    exerciseName: action.exerciseName || '',
-    content: action.content || '',
-    scores: action.scores || { arousal: 0, valence: 0 },
-    bingo: action.bingo || '',
-    celebration: action.celebration || '',
-    workExperienceTitle: action.workExperienceTitle || '',
-    workExperienceHtml: action.workExperienceHtml || '',
-    createdAt: action.createdAt || now,
-    updatedAt: action.updatedAt || now,
-  }
+  }, actionId)
 }
 
 function normalizeState(rawState = {}) {
@@ -276,7 +265,9 @@ function normalizeState(rawState = {}) {
   parsed.goals = Object.fromEntries(
     Object.entries(parsed.goals || {}).map(([id, goal]) => [id, normalizeGoal(goal, id)]),
   )
-  parsed.actions = parsed.actions || {}
+  parsed.actions = Object.fromEntries(
+    Object.entries(parsed.actions || {}).map(([id, action]) => [id, normalizeActionRecord(action, id)]),
+  )
   parsed.exerciseGoals = Object.fromEntries(
     Object.entries(parsed.exerciseGoals || {}).map(([id, goal]) => [id, normalizeExerciseGoal(goal, id)]),
   )
@@ -303,7 +294,14 @@ function readLocalState() {
     if (!hasBrowserStorage()) return createDefaultState()
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return createDefaultState()
-    return normalizeState(JSON.parse(raw))
+    const normalized = normalizeState(JSON.parse(raw))
+
+    const nextRaw = JSON.stringify(normalized)
+    if (raw !== nextRaw) {
+      localStorage.setItem(STORAGE_KEY, nextRaw)
+    }
+
+    return normalized
   } catch (e) {
     console.error('读取存储失败', e)
     return createDefaultState()
@@ -665,7 +663,7 @@ export function addAction(goalId, payload) {
   const s = readState()
   const id = uid('a-')
   const now = new Date().toISOString()
-  const action = {
+  const action = normalizeActionRecord({
     id,
     goalId,
     startTime: payload.startTime || null,
@@ -682,7 +680,7 @@ export function addAction(goalId, payload) {
     workExperienceHtml: payload.workExperienceHtml || '',
     createdAt: now,
     updatedAt: now,
-  }
+  }, id)
   s.actions = s.actions || {}
   s.actions[id] = action
   writeState(s)
@@ -692,7 +690,11 @@ export function addAction(goalId, payload) {
 export function updateAction(id, patch) {
   const s = readState()
   if (!s.actions[id]) return null
-  s.actions[id] = { ...s.actions[id], ...patch, updatedAt: new Date().toISOString() }
+  s.actions[id] = normalizeActionRecord({
+    ...s.actions[id],
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  }, id)
   writeState(s)
   return s.actions[id]
 }
