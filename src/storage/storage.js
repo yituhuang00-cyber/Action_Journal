@@ -172,18 +172,46 @@ function normalizeWeeklyPlanRef(ref) {
   return { goalId, subTargetId }
 }
 
-function normalizeWeeklyPlan(plan = {}, weekKey = '') {
-  const subTargetRefs = Array.isArray(plan.subTargetRefs)
-    ? plan.subTargetRefs
+function normalizeWeeklyPlanRefs(refs) {
+  return Array.isArray(refs)
+    ? refs
         .map(normalizeWeeklyPlanRef)
         .filter(Boolean)
-        .filter((ref, index, refs) => refs.findIndex((item) => item.goalId === ref.goalId && item.subTargetId === ref.subTargetId) === index)
+        .filter((ref, index, allRefs) => allRefs.findIndex((item) => item.goalId === ref.goalId && item.subTargetId === ref.subTargetId) === index)
     : []
+}
+
+function normalizeWeeklyHourTarget(value, fallback) {
+  const nextValue = Number(value)
+  if (!Number.isFinite(nextValue) || nextValue <= 0) return fallback
+  return nextValue
+}
+
+function normalizeWeeklyPlan(plan = {}, weekKey = '') {
+  const legacyRefs = normalizeWeeklyPlanRefs(plan.subTargetRefs)
+  const conservativeSubTargetRefs = normalizeWeeklyPlanRefs(plan.conservativeSubTargetRefs)
+  const ambitiousSubTargetRefs = normalizeWeeklyPlanRefs(plan.ambitiousSubTargetRefs)
+  const nextConservativeRefs = conservativeSubTargetRefs.length ? conservativeSubTargetRefs : legacyRefs
+  const nextAmbitiousRefs = ambitiousSubTargetRefs.length ? ambitiousSubTargetRefs : nextConservativeRefs
+  const unionRefMap = new Map()
+  nextConservativeRefs.concat(nextAmbitiousRefs).forEach((ref) => {
+    unionRefMap.set(`${ref.goalId}::${ref.subTargetId}`, ref)
+  })
+  const subTargetRefs = Array.from(unionRefMap.values())
+  const conservativeHoursTarget = normalizeWeeklyHourTarget(plan.conservativeHoursTarget, 12)
+  const ambitiousHoursTarget = normalizeWeeklyHourTarget(
+    plan.ambitiousHoursTarget,
+    Math.max(conservativeHoursTarget, 24),
+  )
 
   return {
     weekKey: plan.weekKey || weekKey,
     startDate: normalizeDateOnly(plan.startDate, ''),
     endDate: normalizeDateOnly(plan.endDate, ''),
+    conservativeHoursTarget,
+    ambitiousHoursTarget,
+    conservativeSubTargetRefs: nextConservativeRefs,
+    ambitiousSubTargetRefs: nextAmbitiousRefs,
     subTargetRefs,
     confirmedAt: typeof plan.confirmedAt === 'string' ? plan.confirmedAt : '',
   }
@@ -213,12 +241,20 @@ function normalizeSubTarget(subTarget = {}, previousSubTarget = null) {
     subTarget.endDate,
     normalizeDateOnly(previousSubTarget?.endDate, normalizeDateOnly(legacyWhen, '')),
   )
+  const estimatedHoursValue = Number(
+    Object.prototype.hasOwnProperty.call(subTarget, 'estimatedHours')
+      ? subTarget.estimatedHours
+      : previousSubTarget?.estimatedHours,
+  )
 
   return {
     id: subTarget.id || previousSubTarget?.id || uid('st-'),
     startDate,
     endDate,
     content: typeof subTarget.content === 'string' ? subTarget.content : previousSubTarget?.content || '',
+    estimatedHours: Number.isFinite(estimatedHoursValue) && estimatedHoursValue > 0
+      ? Math.round(estimatedHoursValue * 100) / 100
+      : null,
     status: nextStatus,
     createdAt: previousSubTarget?.createdAt || subTarget.createdAt || now,
     updatedAt: subTarget.updatedAt || now,
@@ -673,6 +709,7 @@ export function addAction(goalId, payload) {
     content: payload.content || '',
     nextAction: payload.nextAction || payload.notes || '',
     scores: payload.scores || { arousal: 0, valence: 0 },
+    feeling: payload.feeling || payload.rant || payload.bingo || '',
     rant: payload.rant || '',
     bingo: payload.bingo || '',
     celebration: payload.celebration || '',
@@ -801,6 +838,7 @@ export function addExerciseAction(goalId, payload) {
     exerciseName: payload.exerciseName || '',
     content: payload.content || '',
     scores: payload.scores || { arousal: 0, valence: 0 },
+    feeling: payload.feeling || payload.bingo || '',
     bingo: payload.bingo || '',
     celebration: payload.celebration || '',
     workExperienceTitle: payload.workExperienceTitle || '',
@@ -953,6 +991,10 @@ export function importData(json, { merge = true } = {}) {
     throw new Error('导入的数据不是合法的 JSON')
   }
   if (!incoming || typeof incoming !== 'object') throw new Error('导入的数据结构不正确')
+
+  if (incoming.state && typeof incoming.state === 'object' && !Array.isArray(incoming.state)) {
+    incoming = incoming.state
+  }
 
   if (!merge) {
     // ensure settings default if missing

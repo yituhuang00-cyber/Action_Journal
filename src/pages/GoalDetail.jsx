@@ -103,13 +103,14 @@ export default function GoalDetail() {
   const [createSubTargetModalOpen, setCreateSubTargetModalOpen] = useState(false)
   const [newSubTargetStartDate, setNewSubTargetStartDate] = useState('')
   const [newSubTargetEndDate, setNewSubTargetEndDate] = useState('')
+  const [newSubTargetEstimatedHours, setNewSubTargetEstimatedHours] = useState('')
   const [newSubTargetContent, setNewSubTargetContent] = useState('')
   const [bulkSubTargetContent, setBulkSubTargetContent] = useState('')
   const [subTargetCreateMode, setSubTargetCreateMode] = useState('single')
   const [subTargetStatusFilter, setSubTargetStatusFilter] = useState(SUB_TARGET_FILTER_ALL)
   const [subTargetWeekFilter, setSubTargetWeekFilter] = useState(SUB_TARGET_FILTER_ALL)
   const [editingSubTargetId, setEditingSubTargetId] = useState(null)
-  const [editingSubTargetDraft, setEditingSubTargetDraft] = useState({ startDate: '', endDate: '', content: '' })
+  const [editingSubTargetDraft, setEditingSubTargetDraft] = useState({ startDate: '', endDate: '', estimatedHours: '', content: '' })
   const [celebratingSubTargetId, setCelebratingSubTargetId] = useState(null)
 
   function getStartDate(g) {
@@ -146,6 +147,26 @@ export default function GoalDetail() {
     if (!hours) return `${remainingMinutes}分钟`
     if (!remainingMinutes) return `${hours}小时`
     return `${hours}小时${remainingMinutes}分钟`
+  }
+
+  function formatHourValue(value) {
+    const normalized = Math.round(Number(value) * 100) / 100
+    if (!Number.isFinite(normalized)) return ''
+    return Number.isInteger(normalized) ? String(normalized) : String(normalized)
+  }
+
+  function formatEstimatedHoursLabel(value) {
+    const hours = Number(value)
+    if (!Number.isFinite(hours) || hours <= 0) return '预估 ? 小时'
+    return `预估 ${formatHourValue(hours)} 小时`
+  }
+
+  function parseEstimatedHoursInput(value) {
+    const text = String(value ?? '').trim()
+    if (!text) return null
+    const hours = Number(text)
+    if (!Number.isFinite(hours) || hours <= 0) return Number.NaN
+    return Math.round(hours * 100) / 100
   }
 
   function renderActionTextRow(label, value) {
@@ -243,6 +264,7 @@ export default function GoalDetail() {
   function openCreateSubTargetModal() {
     setNewSubTargetStartDate('')
     setNewSubTargetEndDate('')
+    setNewSubTargetEstimatedHours('')
     setNewSubTargetContent('')
     setBulkSubTargetContent('')
     setSubTargetCreateMode('single')
@@ -253,6 +275,7 @@ export default function GoalDetail() {
     setCreateSubTargetModalOpen(false)
     setNewSubTargetStartDate('')
     setNewSubTargetEndDate('')
+    setNewSubTargetEstimatedHours('')
     setNewSubTargetContent('')
     setBulkSubTargetContent('')
     setSubTargetCreateMode('single')
@@ -331,6 +354,9 @@ export default function GoalDetail() {
       return window.alert('结束日期需要晚于或等于开始日期')
     }
 
+    const estimatedHours = parseEstimatedHoursInput(newSubTargetEstimatedHours)
+    if (Number.isNaN(estimatedHours)) return window.alert('请填写正确的预估时长（小时），或留空')
+
     if (subTargetCreateMode === 'batch') {
       const lines = bulkSubTargetContent
         .split(/\r?\n/)
@@ -342,6 +368,7 @@ export default function GoalDetail() {
       const createdItems = addSubTargets(id, lines.map((content) => ({
         startDate: newSubTargetStartDate,
         endDate: newSubTargetEndDate,
+        estimatedHours,
         content,
         status: 'want',
       })))
@@ -359,6 +386,7 @@ export default function GoalDetail() {
     const created = addSubTarget(id, {
       startDate: newSubTargetStartDate,
       endDate: newSubTargetEndDate,
+      estimatedHours,
       content,
       status: 'want',
     })
@@ -374,13 +402,14 @@ export default function GoalDetail() {
     setEditingSubTargetDraft({
       startDate: subTarget.startDate || '',
       endDate: subTarget.endDate || '',
+      estimatedHours: subTarget.estimatedHours ? formatHourValue(subTarget.estimatedHours) : '',
       content: subTarget.content || '',
     })
   }
 
   function handleCancelEditSubTarget() {
     setEditingSubTargetId(null)
-    setEditingSubTargetDraft({ startDate: '', endDate: '', content: '' })
+    setEditingSubTargetDraft({ startDate: '', endDate: '', estimatedHours: '', content: '' })
   }
 
   function handleSaveSubTarget(subTargetId) {
@@ -389,10 +418,13 @@ export default function GoalDetail() {
     if (!isValidSubTargetDateRange(editingSubTargetDraft.startDate, editingSubTargetDraft.endDate)) {
       return window.alert('结束日期需要晚于或等于开始日期')
     }
+    const estimatedHours = parseEstimatedHoursInput(editingSubTargetDraft.estimatedHours)
+    if (Number.isNaN(estimatedHours)) return window.alert('请填写正确的预估时长（小时），或留空')
 
     const updated = updateSubTarget(id, subTargetId, {
       startDate: editingSubTargetDraft.startDate,
       endDate: editingSubTargetDraft.endDate,
+      estimatedHours,
       content,
     })
 
@@ -651,7 +683,10 @@ export default function GoalDetail() {
                         <div className={`subtarget-item subtarget-item-${subTarget.status || 'want'} ${isCelebrating ? 'is-complete-celebration' : ''}`} key={subTarget.id}>
                           <div className="subtarget-item-top">
                             <div>
-                              <div className="subtarget-meta">计划日期：{formatSubTargetSchedule(subTarget)}</div>
+                              <div className="subtarget-meta-row">
+                                <div className="subtarget-meta">计划日期：{formatSubTargetSchedule(subTarget)}</div>
+                                <div className="subtarget-estimate-chip">{formatEstimatedHoursLabel(subTarget.estimatedHours)}</div>
+                              </div>
                               <div className="subtarget-week-chip-row">
                                 {subTargetWeekMetas.length ? subTargetWeekMetas.map((meta) => (
                                   <span className="subtarget-week-chip" key={meta.key}>{meta.label}</span>
@@ -701,6 +736,19 @@ export default function GoalDetail() {
                                   type="date"
                                   value={editingSubTargetDraft.endDate}
                                   onChange={(e) => setEditingSubTargetDraft((draft) => ({ ...draft, endDate: e.target.value }))}
+                                />
+                              </div>
+                              <div className="subtarget-form-field">
+                                <label htmlFor={`edit-subtarget-estimated-hours-${subTarget.id}`}>预估时长（小时，可留空）</label>
+                                <input
+                                  id={`edit-subtarget-estimated-hours-${subTarget.id}`}
+                                  type="number"
+                                  min="0"
+                                  step="0.5"
+                                  inputMode="decimal"
+                                  placeholder="例如 2 或 3.5"
+                                  value={editingSubTargetDraft.estimatedHours}
+                                  onChange={(e) => setEditingSubTargetDraft((draft) => ({ ...draft, estimatedHours: e.target.value }))}
                                 />
                               </div>
                               <div className="subtarget-form-field subtarget-form-field-wide">
@@ -921,6 +969,20 @@ export default function GoalDetail() {
                   value={newSubTargetEndDate}
                   onChange={(e) => setNewSubTargetEndDate(e.target.value)}
                 />
+              </div>
+              <div className="subtarget-form-field">
+                <label htmlFor="subtarget-estimated-hours">预估时长（小时，可留空）</label>
+                <input
+                  id="subtarget-estimated-hours"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  inputMode="decimal"
+                  placeholder="例如 2 或 3.5"
+                  value={newSubTargetEstimatedHours}
+                  onChange={(e) => setNewSubTargetEstimatedHours(e.target.value)}
+                />
+                <div className="muted subtarget-bulk-hint">不确定时可以留空，周计划里会显示为“？”；批量创建时会把这个数值应用到所有新条目。</div>
               </div>
 
               {subTargetCreateMode === 'single' ? (

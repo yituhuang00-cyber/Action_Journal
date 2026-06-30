@@ -71,6 +71,7 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
       content,
       nextAction,
       scores: { arousal: Number(arousal), valence: Number(valence) },
+      feeling,
       rant: feeling,
       bingo: '',
       celebration,

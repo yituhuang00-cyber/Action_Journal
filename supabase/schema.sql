@@ -48,6 +48,7 @@ create table if not exists public.goal_sub_targets (
   start_date text not null default '',
   end_date text not null default '',
   content text not null default '',
+  estimated_hours numeric,
   status text not null default 'want',
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
@@ -103,6 +104,18 @@ create table if not exists public.exercise_actions (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.actions
+  add column if not exists work_experience_title text not null default '';
+
+alter table public.actions
+  add column if not exists work_experience_html text not null default '';
+
+alter table public.exercise_actions
+  add column if not exists work_experience_title text not null default '';
+
+alter table public.exercise_actions
+  add column if not exists work_experience_html text not null default '';
+
 create table if not exists public.writing_templates (
   id text primary key,
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -144,9 +157,28 @@ create table if not exists public.weekly_plans (
   start_date text not null default '',
   end_date text not null default '',
   confirmed_at text not null default '',
+  conservative_hours_target numeric not null default 12,
+  ambitious_hours_target numeric not null default 24,
+  conservative_sub_target_refs jsonb not null default '[]'::jsonb,
+  ambitious_sub_target_refs jsonb not null default '[]'::jsonb,
   sub_target_refs jsonb not null default '[]'::jsonb,
   primary key (user_id, week_key)
 );
+
+alter table public.goal_sub_targets
+  add column if not exists estimated_hours numeric;
+
+alter table public.weekly_plans
+  add column if not exists conservative_hours_target numeric not null default 12;
+
+alter table public.weekly_plans
+  add column if not exists ambitious_hours_target numeric not null default 24;
+
+alter table public.weekly_plans
+  add column if not exists conservative_sub_target_refs jsonb not null default '[]'::jsonb;
+
+alter table public.weekly_plans
+  add column if not exists ambitious_sub_target_refs jsonb not null default '[]'::jsonb;
 
 create table if not exists public.daily_plans (
   user_id uuid not null references auth.users (id) on delete cascade,

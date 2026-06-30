@@ -62,7 +62,9 @@ function hasLegacyActionRows(actions = []) {
 function hasLegacyExerciseActionRows(actions = []) {
   return actions.some((action) => {
     const bingo = typeof action?.bingo === 'string' ? action.bingo.trim() : ''
-    return Boolean(bingo)
+    const hasFeelingColumn = Object.prototype.hasOwnProperty.call(action || {}, 'feeling')
+    const feeling = typeof action?.feeling === 'string' ? action.feeling.trim() : ''
+    return Boolean(hasFeelingColumn && feeling && bingo && bingo !== feeling)
   })
 }
 
@@ -98,6 +100,7 @@ function buildNormalizedRows(userId, state) {
       start_date: subTarget.startDate || '',
       end_date: subTarget.endDate || '',
       content: subTarget.content || '',
+      estimated_hours: subTarget.estimatedHours ?? null,
       status: subTarget.status || 'want',
       created_at: subTarget.createdAt || new Date().toISOString(),
       updated_at: subTarget.updatedAt || new Date().toISOString(),
@@ -147,7 +150,7 @@ function buildNormalizedRows(userId, state) {
         exercise_name: normalizedAction.exerciseName || '',
         content: normalizedAction.content || '',
         scores: ensureObject(normalizedAction.scores, { arousal: 0, valence: 0 }),
-        bingo: normalizedAction.bingo || '',
+        bingo: normalizedAction.feeling || normalizedAction.bingo || '',
         celebration: normalizedAction.celebration || '',
         work_experience_title: normalizedAction.workExperienceTitle || '',
         work_experience_html: normalizedAction.workExperienceHtml || '',
@@ -192,6 +195,10 @@ function buildNormalizedRows(userId, state) {
       start_date: plan.startDate || '',
       end_date: plan.endDate || '',
       confirmed_at: plan.confirmedAt || '',
+      conservative_hours_target: Number(plan.conservativeHoursTarget ?? 12),
+      ambitious_hours_target: Number(plan.ambitiousHoursTarget ?? 24),
+      conservative_sub_target_refs: ensureArray(plan.conservativeSubTargetRefs),
+      ambitious_sub_target_refs: ensureArray(plan.ambitiousSubTargetRefs),
       sub_target_refs: ensureArray(plan.subTargetRefs),
     })),
     dailyPlans: Object.entries(state.dailyPlans || {}).map(([date, content]) => ({
@@ -259,6 +266,7 @@ function composeStateFromRows(rows) {
       startDate: subTarget.start_date || '',
       endDate: subTarget.end_date || '',
       content: subTarget.content || '',
+      estimatedHours: subTarget.estimated_hours ?? null,
       status: subTarget.status || 'want',
       createdAt: subTarget.created_at || new Date().toISOString(),
       updatedAt: subTarget.updated_at || subTarget.created_at || new Date().toISOString(),
@@ -309,6 +317,7 @@ function composeStateFromRows(rows) {
       exerciseName: action.exercise_name || '',
       content: action.content || '',
       scores: ensureObject(action.scores, { arousal: 0, valence: 0 }),
+      feeling: action.feeling || action.bingo || '',
       bingo: action.bingo || '',
       celebration: action.celebration || '',
       workExperienceTitle: action.work_experience_title || '',
@@ -364,6 +373,10 @@ function composeStateFromRows(rows) {
       startDate: plan.start_date || '',
       endDate: plan.end_date || '',
       confirmedAt: plan.confirmed_at || '',
+      conservativeHoursTarget: Number(plan.conservative_hours_target ?? 12),
+      ambitiousHoursTarget: Number(plan.ambitious_hours_target ?? 24),
+      conservativeSubTargetRefs: ensureArray(plan.conservative_sub_target_refs),
+      ambitiousSubTargetRefs: ensureArray(plan.ambitious_sub_target_refs),
       subTargetRefs: ensureArray(plan.sub_target_refs),
     }
   })

@@ -22,9 +22,23 @@
  *   startDate: string, // 从什么时候开始做，可为空；格式 YYYY-MM-DD
  *   endDate: string, // 到什么时候结束，可为空；格式 YYYY-MM-DD
  *   content: string, // 子目标内容
+ *   estimatedHours: number | null, // 预估需要投入的小时数，可为空
  *   status: 'want' | 'doing' | 'done',
  *   createdAt: ISOString,
  *   updatedAt: ISOString
+ * }
+
+ * WeeklyPlan (某一周的计划):
+ * {
+ *   weekKey: string,
+ *   startDate: string,
+ *   endDate: string,
+ *   conservativeHoursTarget: number, // 保守版周计划目标时长（小时）
+ *   ambitiousHoursTarget: number, // 进取版周计划目标时长（小时）
+ *   conservativeSubTargetRefs: Array<{ goalId: string, subTargetId: string }>,
+ *   ambitiousSubTargetRefs: Array<{ goalId: string, subTargetId: string }>,
+ *   subTargetRefs: Array<{ goalId: string, subTargetId: string }>, // 两个版本的合集，兼容旧逻辑
+ *   confirmedAt: ISOString
  * }
  *
  * Action (一次具体行动记录):
@@ -137,6 +151,7 @@ export const exampleGoal = {
       startDate: '',
       endDate: '',
       content: '先写一个 200 字提纲',
+      estimatedHours: 2,
       status: 'want',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
