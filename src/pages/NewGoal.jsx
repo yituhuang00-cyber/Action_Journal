@@ -54,62 +54,113 @@ export default function NewGoal() {
 
   return (
     <div className="page new-goal-page">
-      <h2>新建目标</h2>
-      <form onSubmit={handleSave} style={{ maxWidth: 760 }}>
-        <div style={{ marginBottom: 12 }}>
-          <label>目标</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：学习写作" style={{ width: '100%', padding: 8, borderRadius: 8 }} />
+      <div className="page-shell form-page-shell">
+        <div className="page-header form-page-header">
+          <div>
+            <div className="page-eyebrow">目标设计</div>
+            <h2 className="page-title">新建目标</h2>
+            <div className="page-subtitle">先把目标、动机和外部条件说清楚，再进入行动。</div>
+          </div>
+          <button type="button" className="small-btn ghost" onClick={() => navigate('/')}>返回</button>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label>为什么自己想要做这件事？</label>
-          {reasons.map((r, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <input value={r} onChange={(e) => updateReason(i, e.target.value)} style={{ flex: 1, padding: 8, borderRadius: 6 }} placeholder={`理由 ${i + 1}`} />
-              <button type="button" onClick={() => removeReason(i)} className="small-btn danger">删除</button>
+        <form onSubmit={handleSave} className="goal-form-shell">
+          <section className="goal-form-card goal-form-card-primary">
+            <div className="form-section-heading">
+              <span>01</span>
+              <div>
+                <h3>目标本身</h3>
+                <p>用一句话写清楚你要推进的方向。</p>
+              </div>
             </div>
-          ))}
-          <div style={{ marginTop: 8 }}><button type="button" onClick={addReason} className="small-btn ghost">添加理由</button></div>
-        </div>
+            <label className="field-label">目标</label>
+            <input className="field-control field-control-lg" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：学习写作" />
+          </section>
 
-        <div style={{ marginBottom: 12 }}>
-          <label>我期待在什么时候，获得什么结果/实现什么目标</label>
-          <textarea
-            value={expectedOutcome}
-            onChange={(e) => setExpectedOutcome(e.target.value)}
-            style={{ width: '100%', padding: 8, borderRadius: 8, minHeight: 96, resize: 'vertical' }}
-            placeholder="例如：\n- 时间：3 个月内\n- 结果：完成 10 篇短文"
-          />
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <label>在实现目标的过程中，哪些人际联结，可能为我提供动力和支持</label>
-          {supports.map((s, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-              <input value={s} onChange={(e) => updateSupport(i, e.target.value)} style={{ flex: 1, padding: 8, borderRadius: 6 }} placeholder={`支持 ${i + 1}`} />
-              <button type="button" onClick={() => removeSupport(i)} className="small-btn danger">删除</button>
+          <section className="goal-form-card">
+            <div className="form-section-heading">
+              <span>02</span>
+              <div>
+                <h3>内在动机</h3>
+                <p>记录你为什么想做这件事，后面回顾时会很有用。</p>
+              </div>
             </div>
-          ))}
-          <div style={{ marginTop: 8 }}><button type="button" onClick={addSupport} className="small-btn ghost">添加支持</button></div>
-        </div>
-
-        <div style={{ marginBottom: 12 }}>
-          <label>可能影响结果的内部和外部因素，并给它们的可控程度进行打分（0-10）</label>
-          {factors.map((f, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-              <input value={f.name} onChange={(e) => updateFactor(i, 'name', e.target.value)} placeholder={`因素 ${i + 1}`} style={{ flex: 1, padding: 8, borderRadius: 6 }} />
-              <input type="number" value={f.controllability} min="0" max="10" onChange={(e) => updateFactor(i, 'controllability', e.target.value)} style={{ width: 80, padding: 8, borderRadius: 6 }} />
-              <button type="button" onClick={() => removeFactor(i)} className="small-btn danger">删除</button>
+            <label className="field-label">为什么自己想要做这件事？</label>
+            <div className="repeat-list">
+              {reasons.map((r, i) => (
+                <div key={i} className="repeat-row">
+                  <input value={r} onChange={(e) => updateReason(i, e.target.value)} placeholder={`理由 ${i + 1}`} />
+                  <button type="button" onClick={() => removeReason(i)} className="small-btn danger">删除</button>
+                </div>
+              ))}
             </div>
-          ))}
-          <div style={{ marginTop: 8 }}><button type="button" onClick={addFactor} className="small-btn ghost">添加因素</button></div>
-        </div>
+            <button type="button" onClick={addReason} className="small-btn ghost">添加理由</button>
+          </section>
 
-        <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-          <button className="create-btn" type="submit">保存并返回</button>
-          <button type="button" className="small-btn ghost" onClick={() => navigate('/')}>取消</button>
-        </div>
-      </form>
+          <section className="goal-form-card">
+            <div className="form-section-heading">
+              <span>03</span>
+              <div>
+                <h3>期望结果</h3>
+                <p>把时间和结果写具体，目标才更容易被执行。</p>
+              </div>
+            </div>
+            <label className="field-label">我期待在什么时候，获得什么结果/实现什么目标</label>
+            <textarea
+              value={expectedOutcome}
+              onChange={(e) => setExpectedOutcome(e.target.value)}
+              className="field-control goal-textarea"
+              placeholder={'例如：\n- 时间：3 个月内\n- 结果：完成 10 篇短文'}
+            />
+          </section>
+
+          <section className="goal-form-card">
+            <div className="form-section-heading">
+              <span>04</span>
+              <div>
+                <h3>支持系统</h3>
+                <p>哪些人或关系能给你提醒、反馈和动力。</p>
+              </div>
+            </div>
+            <label className="field-label">在实现目标的过程中，哪些人际联结，可能为我提供动力和支持</label>
+            <div className="repeat-list">
+              {supports.map((s, i) => (
+                <div key={i} className="repeat-row">
+                  <input value={s} onChange={(e) => updateSupport(i, e.target.value)} placeholder={`支持 ${i + 1}`} />
+                  <button type="button" onClick={() => removeSupport(i)} className="small-btn danger">删除</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addSupport} className="small-btn ghost">添加支持</button>
+          </section>
+
+          <section className="goal-form-card">
+            <div className="form-section-heading">
+              <span>05</span>
+              <div>
+                <h3>影响因素</h3>
+                <p>列出可能影响结果的变量，并估计可控程度。</p>
+              </div>
+            </div>
+            <label className="field-label">可能影响结果的内部和外部因素，并给它们的可控程度进行打分（0-10）</label>
+            <div className="repeat-list">
+              {factors.map((f, i) => (
+                <div key={i} className="repeat-row factor-row">
+                  <input value={f.name} onChange={(e) => updateFactor(i, 'name', e.target.value)} placeholder={`因素 ${i + 1}`} />
+                  <input type="number" value={f.controllability} min="0" max="10" onChange={(e) => updateFactor(i, 'controllability', e.target.value)} aria-label="可控程度" />
+                  <button type="button" onClick={() => removeFactor(i)} className="small-btn danger">删除</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addFactor} className="small-btn ghost">添加因素</button>
+          </section>
+
+          <div className="form-sticky-actions">
+            <button className="create-btn" type="submit">保存目标</button>
+            <button type="button" className="small-btn ghost" onClick={() => navigate('/')}>取消</button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }
