@@ -1,9 +1,10 @@
-const WEEKLY_BACKUP_META_KEY = 'action-journal:weekly-backup-meta'
+const DAILY_BACKUP_META_KEY = 'action-journal:daily-backup-meta'
 
 function createEmptyStatus() {
+  const currentDay = getDayInfo()
   return {
-    weekKey: getWeekInfo().key,
-    hasBackupThisWeek: false,
+    dateKey: currentDay.key,
+    hasBackupToday: false,
     lastBackupAt: '',
     filename: '',
   }
@@ -18,29 +19,24 @@ function sanitizeSegment(value, fallback = 'account') {
   return normalized.replace(/^-+|-+$/g, '') || fallback
 }
 
-function getWeekInfo(date = new Date()) {
-  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const day = utcDate.getUTCDay() || 7
-  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day)
-  const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1))
-  const weekNumber = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7)
-
+function getDayInfo(date = new Date()) {
   return {
-    year: utcDate.getUTCFullYear(),
-    week: weekNumber,
-    key: `${utcDate.getUTCFullYear()}-W${padNumber(weekNumber)}`,
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+    key: `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())}`,
   }
 }
 
 function normalizeBackupEntry(entry) {
   if (!entry) return null
   if (typeof entry === 'string') {
-    return { weekKey: entry, lastBackupAt: '', filename: '' }
+    return { dateKey: entry, lastBackupAt: '', filename: '' }
   }
   if (typeof entry !== 'object') return null
 
   return {
-    weekKey: typeof entry.weekKey === 'string' ? entry.weekKey : '',
+    dateKey: typeof entry.dateKey === 'string' ? entry.dateKey : typeof entry.weekKey === 'string' ? entry.weekKey : '',
     lastBackupAt: typeof entry.lastBackupAt === 'string' ? entry.lastBackupAt : '',
     filename: typeof entry.filename === 'string' ? entry.filename : '',
   }
@@ -50,7 +46,7 @@ function readBackupMeta() {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return {}
 
   try {
-    const raw = localStorage.getItem(WEEKLY_BACKUP_META_KEY)
+    const raw = localStorage.getItem(DAILY_BACKUP_META_KEY)
     if (!raw) return {}
     const parsed = JSON.parse(raw)
     return parsed && typeof parsed === 'object' ? parsed : {}
@@ -61,19 +57,20 @@ function readBackupMeta() {
 
 function writeBackupMeta(nextMeta) {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return
-  localStorage.setItem(WEEKLY_BACKUP_META_KEY, JSON.stringify(nextMeta))
+  localStorage.setItem(DAILY_BACKUP_META_KEY, JSON.stringify(nextMeta))
 }
 
 export function getWeeklyBackupStatus(session) {
   if (!session?.user?.id) return createEmptyStatus()
 
-  const currentWeek = getWeekInfo()
+  const currentDay = getDayInfo()
   const meta = readBackupMeta()
   const entry = normalizeBackupEntry(meta[session.user.id])
+  const hasBackupToday = entry?.dateKey === currentDay.key
 
   return {
-    weekKey: currentWeek.key,
-    hasBackupThisWeek: entry?.weekKey === currentWeek.key,
+    dateKey: currentDay.key,
+    hasBackupToday,
     lastBackupAt: entry?.lastBackupAt || '',
     filename: entry?.filename || '',
   }
@@ -100,12 +97,12 @@ export function runWeeklyBackup({ session, exportData, localMode = false, force 
   if (!session?.user?.id || typeof exportData !== 'function') return createEmptyStatus()
 
   const meta = readBackupMeta()
-  const currentWeek = getWeekInfo()
+  const currentDay = getDayInfo()
   const existingEntry = normalizeBackupEntry(meta[session.user.id])
-  if (!force && existingEntry?.weekKey === currentWeek.key) {
+  if (!force && existingEntry?.dateKey === currentDay.key) {
     return {
-      weekKey: currentWeek.key,
-      hasBackupThisWeek: true,
+      dateKey: currentDay.key,
+      hasBackupToday: true,
       lastBackupAt: existingEntry.lastBackupAt || '',
       filename: existingEntry.filename || '',
       downloaded: false,
@@ -128,7 +125,8 @@ export function runWeeklyBackup({ session, exportData, localMode = false, force 
   const backupPayload = {
     meta: {
       createdAt: downloadedAt,
-      weekKey: currentWeek.key,
+      dateKey: currentDay.key,
+      backupCadence: 'daily',
       source: 'action-journal',
       localMode,
       userId: session.user.id,
@@ -137,20 +135,20 @@ export function runWeeklyBackup({ session, exportData, localMode = false, force 
     state: parsedData,
   }
 
-  const filename = `action-journal-backup-${sanitizeSegment(session.user.email, session.user.id)}-${currentWeek.key}.json`
+  const filename = `action-journal-backup-${sanitizeSegment(session.user.email, session.user.id)}-${currentDay.key}.json`
   downloadJson(filename, backupPayload)
   writeBackupMeta({
     ...meta,
     [session.user.id]: {
-      weekKey: currentWeek.key,
+      dateKey: currentDay.key,
       lastBackupAt: downloadedAt,
       filename,
     },
   })
 
   return {
-    weekKey: currentWeek.key,
-    hasBackupThisWeek: true,
+    dateKey: currentDay.key,
+    hasBackupToday: true,
     lastBackupAt: downloadedAt,
     filename,
     downloaded: true,

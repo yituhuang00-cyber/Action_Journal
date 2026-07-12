@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="行动手账">
+  <rect width="64" height="64" rx="14" fill="#2f9f7b"/>
+  <path d="M19 14h24a6 6 0 0 1 6 6v30H21a6 6 0 0 1-6-6V18a4 4 0 0 1 4-4Z" fill="#ffffff"/>
+  <path d="M21 14v36" stroke="#dcebe2" stroke-width="3" stroke-linecap="round"/>
+  <path d="M28 28h12M28 36h9" stroke="#238565" stroke-width="4" stroke-linecap="round"/>
+  <path d="M43 14v36" stroke="#20342b" stroke-opacity=".12" stroke-width="2"/>
+</svg>

@@ -157,7 +157,7 @@ export default function GoalDetail() {
 
   function formatEstimatedHoursLabel(value) {
     const hours = Number(value)
-    if (!Number.isFinite(hours) || hours <= 0) return '预估 ? 小时'
+    if (!Number.isFinite(hours) || hours <= 0) return '未填写预估时长'
     return `预估 ${formatHourValue(hours)} 小时`
   }
 
@@ -237,7 +237,7 @@ export default function GoalDetail() {
     load()
   }
 
-  function handleReviewSaved(updated) {
+  function handleReviewSaved() {
     setCurrentActionForReview(null)
     setReviewModalOpen(false)
     load()

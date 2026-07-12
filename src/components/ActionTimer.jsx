@@ -159,14 +159,12 @@ export default function ActionTimer({ goalId, onStopped, onStarted } = {}) {
     const conservative = reminders.conservativeMinutes
     const ambitious = reminders.ambitiousMinutes
 
-    // 逻辑：
-    // 1) 超过进取时长 -> 弹出第二个提示（更强提醒）
-    // 2) 超过保守时长（但未超过进取时长）-> 弹出第一个提示
+    // 逻辑：超过不同阈值时给出对应强度的休息提醒。
     if (total > ambitious) {
-      const ok = window.confirm('【提示2】你已超过今日设定的进取时长。如果继续行动，可能会效率下降并增加疲惫感。仍要继续创建行动吗？')
+      const ok = window.confirm('你已超过今日设定的进取时长。继续行动可能会降低效率并增加疲惫感，仍要创建新的行动吗？')
       if (!ok) return
     } else if (total > conservative) {
-      const ok = window.confirm('【提示1】你已超过今日设定的保守时长。你可以休息一下，或继续创建新的行动。是否继续？')
+      const ok = window.confirm('你已超过今日设定的保守时长。可以先休息一下，也可以继续创建新的行动。是否继续？')
       if (!ok) return
     }
 

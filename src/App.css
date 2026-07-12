@@ -6,40 +6,8 @@
   text-align: left;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
 .card {
   padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }
 
 /* App layout for skeleton pages */
@@ -5195,14 +5163,6 @@ textarea:focus {
   padding-top: 10px;
 }
 
-.goal-detail-page .card-total-time::after,
-.goal-detail-page .card-records::after,
-.ach-card::after,
-.planner-card::after,
-.goal-card::after {
-  content: '2026';
-}
-
 .goal-detail-page .card-records::before,
 .daily-achievements-page .ach-card::before,
 .planner-card::before {
@@ -5214,21 +5174,6 @@ textarea:focus {
   max-height: min(70vh, 720px);
   overflow-y: auto;
   overflow-x: hidden;
-}
-
-.goal-detail-page .card-records > h3::after {
-  content: 'REC';
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 10px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  color: rgba(129, 58, 58, 0.72);
-  border: 1px solid rgba(191, 123, 123, 0.28);
-  background: rgba(255, 235, 235, 0.7);
-  vertical-align: middle;
 }
 
 .goal-tag-want { background: #e6a560; color: #fff; }

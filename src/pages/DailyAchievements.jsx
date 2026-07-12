@@ -145,7 +145,7 @@ export default function DailyAchievements() {
               onChange={(e) => setAchievementText(e.target.value)}
               onBlur={() => setDailyAchievement(todayKey, achievementText)}
             />
-            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>提示：这里会自动保存到本机（localStorage），按日期分别保存。</div>
+            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}></div>
           </div>
 
           <div className="ach-card">

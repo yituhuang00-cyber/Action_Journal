@@ -197,7 +197,7 @@ export default function WorkExperience() {
             </div>
             <div className="work-experience-actions-row">
               <button className="small-btn ghost" onClick={saveExperience}>保存</button>
-              <button className="btn-primary" onClick={handleBackToReview}>返回行动回顾</button>
+              <button className="btn-primary" onClick={handleBackToReview}>{returnLabel}</button>
             </div>
           </div>
 

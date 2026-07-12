@@ -82,7 +82,7 @@ function hasEntryBeenUpdated(entry) {
 function getPreview(text) {
   const trimmed = String(text || '').trim()
   if (!trimmed) return '未填写'
-  return trimmed.length > 96 ? `${trimmed.slice(0, 96)}...` : trimmed
+  return trimmed.length > 96 ? `${trimmed.slice(0, 96)}…` : trimmed
 }
 
 export default function Writing() {
@@ -315,7 +315,7 @@ export default function Writing() {
     resetWritingForm()
     setSaving(false)
     setActiveMode('review')
-    window.alert(editingEntryId ? '书写记录已更新。' : '书写内容已保存到本地。')
+    window.alert(editingEntryId ? '书写记录已更新。' : '书写内容已保存。')
   }
 
   function handleDeleteEntry(entryId) {
@@ -450,7 +450,7 @@ export default function Writing() {
                         <textarea
                           value={section.prompt}
                           onChange={(event) => updateSection(index, 'prompt', event.target.value)}
-                          placeholder="例如：一个典型的问题，常常以[如何...]开头，或者以[怎么办]结尾。"
+                          placeholder="例如：一个典型的问题，常常以「如何…」开头，或者以「怎么办」结尾。"
                           rows={3}
                         />
                       </label>
@@ -522,7 +522,7 @@ export default function Writing() {
                           取消修改
                         </button>
                       )}
-                      <button type="submit" className="create-btn" disabled={saving}>{saving ? '保存中...' : editingEntryId ? '保存修改' : '保存书写内容'}</button>
+                      <button type="submit" className="create-btn" disabled={saving}>{saving ? '保存中…' : editingEntryId ? '保存修改' : '保存书写内容'}</button>
                     </div>
                   </div>
                 </form>

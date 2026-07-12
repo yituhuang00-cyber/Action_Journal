@@ -7,6 +7,18 @@ const initialForm = {
   password: '',
 }
 
+function getFriendlyAuthError(error, fallback) {
+  const message = String(error?.message || '').toLowerCase()
+
+  if (message.includes('invalid login credentials')) return '邮箱或密码不正确，请重新输入。'
+  if (message.includes('email not confirmed')) return '请先完成邮箱确认，再回来登录。'
+  if (message.includes('already registered') || message.includes('already exists')) return '这个邮箱已经注册，请直接登录。'
+  if (message.includes('password') && message.includes('6')) return '密码至少需要 6 位。'
+  if (message.includes('failed to fetch') || message.includes('network') || message.includes('fetch')) return '网络连接异常，请稍后再试。'
+
+  return fallback
+}
+
 function hasStoredStateSnapshot() {
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false
 
@@ -15,24 +27,6 @@ function hasStoredStateSnapshot() {
   } catch {
     return false
   }
-}
-
-function SetupNotice() {
-  return (
-    <div className="auth-gate-shell">
-      <div className="auth-card card-surface">
-        <div className="auth-eyebrow">云端同步未配置</div>
-        <h2 className="auth-title">还差 Supabase 环境变量</h2>
-        <p className="auth-copy">
-          这个版本已经改为登录后把数据同步到云端数据库。先在项目根目录创建 <code>.env.local</code>，写入
-          <code>VITE_SUPABASE_URL</code> 和 <code>VITE_SUPABASE_ANON_KEY</code>。
-        </p>
-        <p className="auth-copy auth-copy-muted">
-          数据表 SQL 在 <code>supabase/schema.sql</code>，示例变量见 <code>.env.example</code>。
-        </p>
-      </div>
-    </div>
-  )
 }
 
 function LoadingView({ text }) {
@@ -47,6 +41,7 @@ function LoadingView({ text }) {
 }
 
 export default function AuthGate({ children }) {
+  const syncAvailable = isSupabaseConfigured()
   const client = useMemo(() => getSupabaseClient(), [])
   const [session, setSession] = useState(null)
   const [mode, setMode] = useState('sign-in')
@@ -84,9 +79,20 @@ export default function AuthGate({ children }) {
   }, [session])
 
   useEffect(() => {
-    if (!isSupabaseConfigured() || !client) {
-      setStatus({ loading: false, submitting: false, error: '', message: '' })
-      return undefined
+    if (!syncAvailable || !client) {
+      let cancelled = false
+      setLocalMode(true)
+      setStatus({ loading: true, submitting: false, error: '', message: '' })
+      void initializeStorage({ session: null, forceRefresh: true })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) {
+            setStatus({ loading: false, submitting: false, error: '', message: '' })
+          }
+        })
+      return () => {
+        cancelled = true
+      }
     }
 
     let cancelled = false
@@ -102,7 +108,7 @@ export default function AuthGate({ children }) {
         await initializeStorage({ session: nextSession, forceRefresh: true })
       } catch (error) {
         if (!cancelled) {
-          setStatus((prev) => ({ ...prev, error: error.message || '初始化云端数据失败' }))
+          setStatus((prev) => ({ ...prev, error: getFriendlyAuthError(error, '同步暂时不可用，请稍后再试。') }))
         }
       }
     }
@@ -113,10 +119,10 @@ export default function AuthGate({ children }) {
       if (cancelled) return
 
       if (error) {
-        if (!online || hasStoredStateSnapshot()) {
+        if (!onlineRef.current || hasStoredStateSnapshot()) {
           setLocalMode(true)
         }
-        setStatus({ loading: false, submitting: false, error: error.message || '读取登录状态失败', message: '' })
+        setStatus({ loading: false, submitting: false, error: getFriendlyAuthError(error, '读取登录状态失败，请稍后再试。'), message: '' })
         return
       }
 
@@ -159,7 +165,7 @@ export default function AuthGate({ children }) {
         })
         .catch((error) => {
           if (!cancelled) {
-            setStatus({ loading: false, submitting: false, error: error.message || '同步失败', message: '' })
+            setStatus({ loading: false, submitting: false, error: getFriendlyAuthError(error, '同步暂时不可用，请稍后再试。'), message: '' })
           }
         })
     })
@@ -168,7 +174,7 @@ export default function AuthGate({ children }) {
       cancelled = true
       authListener.subscription.unsubscribe()
     }
-  }, [client])
+  }, [client, syncAvailable])
 
   useEffect(() => {
     if (!session || !online) return undefined
@@ -190,7 +196,7 @@ export default function AuthGate({ children }) {
       window.removeEventListener('focus', syncOnFocus)
       document.removeEventListener('visibilitychange', syncOnVisible)
     }
-  }, [session])
+  }, [session, online])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -223,7 +229,12 @@ export default function AuthGate({ children }) {
         message: needsEmailConfirmation ? '注册成功，请去邮箱完成确认后再登录。' : '注册成功，正在初始化数据。',
       })
     } catch (error) {
-      setStatus({ loading: false, submitting: false, error: error.message || '登录失败', message: '' })
+      setStatus({
+        loading: false,
+        submitting: false,
+        error: getFriendlyAuthError(error, mode === 'sign-in' ? '登录失败，请检查邮箱和密码。' : '注册失败，请稍后再试。'),
+        message: '',
+      })
     }
   }
 
@@ -236,19 +247,15 @@ export default function AuthGate({ children }) {
     const { error } = await client.auth.signOut()
     if (error) {
       explicitSignOutRef.current = false
-      setStatus({ loading: false, submitting: false, error: error.message || '退出失败', message: '' })
+      setStatus({ loading: false, submitting: false, error: getFriendlyAuthError(error, '退出失败，请稍后再试。'), message: '' })
       return
     }
 
     setStatus({ loading: false, submitting: false, error: '', message: '' })
   }
 
-  if (!isSupabaseConfigured()) {
-    return <SetupNotice />
-  }
-
   if (status.loading) {
-    return <LoadingView text={session ? '正在同步云端数据…' : '正在读取登录状态…'} />
+    return <LoadingView text={syncAvailable ? (session ? '正在同步云端数据…' : '正在读取登录状态…') : '正在准备本机数据…'} />
   }
 
   if (!session && localMode) {
@@ -257,6 +264,7 @@ export default function AuthGate({ children }) {
           session: null,
           signOut: handleSignOut,
           localMode: true,
+          syncAvailable,
           exitLocalMode: () => setLocalMode(false),
         })
       : children
@@ -269,9 +277,9 @@ export default function AuthGate({ children }) {
           <div className="auth-eyebrow">人生行动手账本</div>
           <h2 className="auth-title">登录后自动同步到云端</h2>
           <p className="auth-copy">
-            现在数据不再只保存在本机浏览器，登录后会保存到你的 Supabase 数据库，并可在不同设备间同步。
+            登录后会把记录安全同步到云端，并可在不同设备间继续使用。
           </p>
-          {!online ? <p className="auth-copy auth-copy-muted">当前离线。你也可以先进入本地模式继续记录，恢复网络后再登录同步。</p> : null}
+          {!online ? <p className="auth-copy auth-copy-muted">当前离线。你也可以先使用本机数据继续记录，恢复网络后再登录同步。</p> : null}
           <form className="auth-form" onSubmit={handleSubmit}>
             <label>
               邮箱
@@ -325,6 +333,6 @@ export default function AuthGate({ children }) {
   }
 
   return typeof children === 'function'
-    ? children({ session, signOut: handleSignOut, localMode, exitLocalMode: () => setLocalMode(false) })
+    ? children({ session, signOut: handleSignOut, localMode, syncAvailable, exitLocalMode: () => setLocalMode(false) })
     : children
 }

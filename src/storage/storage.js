@@ -12,6 +12,7 @@ import {
 const STORAGE_KEY = 'action-journal:state'
 const STORAGE_OWNER_KEY = 'action-journal:state-owner'
 const STORAGE_SYNC_META_KEY = 'action-journal:state-sync-meta'
+const STORAGE_SAFETY_BACKUP_KEY = 'action-journal:state-safety-backup:last'
 export const STORAGE_SYNC_EVENT = 'action-journal:state-changed'
 export { STORAGE_STATUS_EVENT, getSyncStatus }
 
@@ -352,8 +353,9 @@ function readState() {
   return memoryState
 }
 
-function hasMeaningfulData(state) {
-  if (!state) return false
+function countMeaningfulData(state) {
+  if (!state) return 0
+
   return [
     'goals',
     'actions',
@@ -364,7 +366,27 @@ function hasMeaningfulData(state) {
     'weeklyPlans',
     'dailyPlans',
     'dailyAchievements',
-  ].some((key) => Object.keys(state[key] || {}).length > 0)
+  ].reduce((total, key) => total + Object.keys(state[key] || {}).length, 0)
+}
+
+function hasMeaningfulData(state) {
+  return countMeaningfulData(state) > 0
+}
+
+function writeLocalSafetyBackup(reason, state, ownerId = readLocalOwner()) {
+  if (!hasBrowserStorage() || !hasMeaningfulData(state)) return
+
+  try {
+    localStorage.setItem(STORAGE_SAFETY_BACKUP_KEY, JSON.stringify({
+      reason,
+      ownerId,
+      createdAt: new Date().toISOString(),
+      itemCount: countMeaningfulData(state),
+      state,
+    }))
+  } catch (error) {
+    console.warn('Failed to write local safety backup', error)
+  }
 }
 
 function persistLocalState(state, { emit = true, ownerId = currentUserId || readLocalOwner(), markPending = false, syncedAt = '' } = {}) {
@@ -460,7 +482,26 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
     const normalizedRemoteState = await fetchNormalizedState(userId)
 
     if (normalizedRemoteState) {
+      const localDataCount = countMeaningfulData(localState)
+      const remoteDataCount = countMeaningfulData(normalizedRemoteState)
+
+      if (remoteDataCount === 0 && localDataCount > 0 && (!localOwner || localOwner === userId)) {
+        await persistRemoteStateForUser(userId, localState)
+        const syncedAt = new Date().toISOString()
+        const nextState = persistLocalState(localState, { ownerId: userId, syncedAt })
+        setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
+        return nextState
+      }
+
       if (localOwner === userId && localSyncMeta.pending) {
+        if (localDataCount === 0 && remoteDataCount > 0) {
+          console.warn('Skipped syncing empty local state over existing cloud data.')
+          const syncedAt = new Date().toISOString()
+          const nextState = persistLocalState(normalizedRemoteState, { ownerId: userId, syncedAt })
+          setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
+          return nextState
+        }
+
         await persistRemoteStateForUser(userId, localState)
         const syncedAt = new Date().toISOString()
         const nextState = persistLocalState(localState, { ownerId: userId, syncedAt })
@@ -469,6 +510,9 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
       }
 
       const syncedAt = new Date().toISOString()
+      if (localDataCount > remoteDataCount) {
+        writeLocalSafetyBackup('before-cloud-refresh', localState, localOwner || userId)
+      }
       const nextState = persistLocalState(normalizedRemoteState, { ownerId: userId, syncedAt })
       setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
       return nextState
@@ -488,6 +532,10 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
     const seedState = hasMeaningfulData(localState) && (!localOwner || localOwner === userId)
       ? localState
       : createDefaultState()
+
+    if (!hasMeaningfulData(seedState) && hasMeaningfulData(localState)) {
+      writeLocalSafetyBackup('before-empty-account-seed', localState, localOwner)
+    }
 
     persistLocalState(seedState, { ownerId: userId })
     await persistRemoteStateForUser(userId, seedState)
@@ -996,6 +1044,8 @@ export function importData(json, { merge = true } = {}) {
     incoming = incoming.state
   }
 
+  writeLocalSafetyBackup(merge ? 'before-import-merge' : 'before-import-replace', readState(), currentUserId || readLocalOwner())
+
   if (!merge) {
     // ensure settings default if missing
     incoming.settings = incoming.settings || { conservativeMinutes: 60, ambitiousMinutes: 180 }
@@ -1085,6 +1135,7 @@ export function updateSettings(patch) {
 
 export function clearAll() {
   const ownerId = currentUserId || readLocalOwner()
+  writeLocalSafetyBackup('before-clear-all', readState(), ownerId)
   const nextState = persistLocalState(createDefaultState(), { ownerId, markPending: true })
   void queueRemoteWrite(nextState)
 }

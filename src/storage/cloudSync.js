@@ -491,15 +491,44 @@ export async function fetchLegacyCloudState(userId) {
   return data?.state || null
 }
 
-async function deleteUserRows(client, table, userId) {
-  const { error } = await client.from(table).delete().eq('user_id', userId)
-  if (error) throw error
-}
-
 async function upsertRows(client, table, rows, onConflict) {
   if (!rows.length) return
   const { error } = await client.from(table).upsert(rows, onConflict ? { onConflict } : undefined)
   if (error) throw error
+}
+
+const DELETE_BATCH_SIZE = 200
+
+function getRowValue(row, column) {
+  const value = row?.[column]
+  return typeof value === 'string' && value ? value : ''
+}
+
+async function fetchExistingValues(client, table, userId, column) {
+  const { data, error } = await client.from(table).select(column).eq('user_id', userId)
+  if (error) throw error
+
+  return (data || [])
+    .map((row) => getRowValue(row, column))
+    .filter(Boolean)
+}
+
+async function deleteRowsByValues(client, table, userId, column, values) {
+  for (let index = 0; index < values.length; index += DELETE_BATCH_SIZE) {
+    const chunk = values.slice(index, index + DELETE_BATCH_SIZE)
+    const { error } = await client.from(table).delete().eq('user_id', userId).in(column, chunk)
+    if (error) throw error
+  }
+}
+
+async function deleteStaleRows(client, table, userId, column, nextRows) {
+  const nextValues = new Set(nextRows.map((row) => getRowValue(row, column)).filter(Boolean))
+  const existingValues = await fetchExistingValues(client, table, userId, column)
+  const staleValues = existingValues.filter((value) => !nextValues.has(value))
+
+  if (staleValues.length) {
+    await deleteRowsByValues(client, table, userId, column, staleValues)
+  }
 }
 
 export async function persistNormalizedState(userId, state) {
@@ -509,14 +538,6 @@ export async function persistNormalizedState(userId, state) {
   if (!client) return false
 
   const rows = buildNormalizedRows(userId, state)
-
-  await deleteUserRows(client, TABLES.dailyAchievements, userId)
-  await deleteUserRows(client, TABLES.dailyPlans, userId)
-  await deleteUserRows(client, TABLES.weeklyPlans, userId)
-  await deleteUserRows(client, TABLES.userSettings, userId)
-  await deleteUserRows(client, TABLES.goals, userId)
-  await deleteUserRows(client, TABLES.exerciseGoals, userId)
-  await deleteUserRows(client, TABLES.writingTemplates, userId)
 
   await upsertRows(client, TABLES.goals, rows.goals, 'id')
   await upsertRows(client, TABLES.exerciseGoals, rows.exerciseGoals, 'id')
@@ -531,5 +552,19 @@ export async function persistNormalizedState(userId, state) {
   await upsertRows(client, TABLES.dailyPlans, rows.dailyPlans, 'user_id,plan_date')
   await upsertRows(client, TABLES.dailyAchievements, rows.dailyAchievements, 'user_id,achievement_date')
   await upsertRows(client, TABLES.userSettings, rows.userSettings, 'user_id')
+
+  await deleteStaleRows(client, TABLES.goalSubTargets, userId, 'id', rows.goalSubTargets)
+  await deleteStaleRows(client, TABLES.actions, userId, 'id', rows.actions)
+  await deleteStaleRows(client, TABLES.exerciseActions, userId, 'id', rows.exerciseActions)
+  await deleteStaleRows(client, TABLES.writingTemplateSections, userId, 'id', rows.writingTemplateSections)
+  await deleteStaleRows(client, TABLES.writingEntryAnswers, userId, 'id', rows.writingEntryAnswers)
+  await deleteStaleRows(client, TABLES.writingEntries, userId, 'id', rows.writingEntries)
+  await deleteStaleRows(client, TABLES.weeklyPlans, userId, 'week_key', rows.weeklyPlans)
+  await deleteStaleRows(client, TABLES.dailyPlans, userId, 'plan_date', rows.dailyPlans)
+  await deleteStaleRows(client, TABLES.dailyAchievements, userId, 'achievement_date', rows.dailyAchievements)
+  await deleteStaleRows(client, TABLES.goals, userId, 'id', rows.goals)
+  await deleteStaleRows(client, TABLES.exerciseGoals, userId, 'id', rows.exerciseGoals)
+  await deleteStaleRows(client, TABLES.writingTemplates, userId, 'id', rows.writingTemplates)
+
   return true
 }
