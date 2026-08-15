@@ -36,6 +36,7 @@ create table if not exists public.goals (
   status text not null default 'want',
   start_date text not null default '',
   completed_date text,
+  problem_solving_entries jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -68,6 +69,7 @@ create table if not exists public.actions (
   rant text not null default '',
   bingo text not null default '',
   celebration text not null default '',
+  motivational_feelings jsonb not null default '{}'::jsonb,
   work_experience_title text not null default '',
   work_experience_html text not null default '',
   created_at timestamptz not null default timezone('utc', now()),
@@ -98,23 +100,54 @@ create table if not exists public.exercise_actions (
   scores jsonb not null default '{"arousal":0,"valence":0}'::jsonb,
   bingo text not null default '',
   celebration text not null default '',
+  motivational_feelings jsonb not null default '{}'::jsonb,
   work_experience_title text not null default '',
   work_experience_html text not null default '',
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+create table if not exists public.long_term_targets (
+  id text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  title text not null default '',
+  reasons jsonb not null default '[]'::jsonb,
+  descriptions jsonb not null default '[]'::jsonb,
+  pathways jsonb not null default '[]'::jsonb,
+  category text not null default 'conservative' check (category in ('conservative', 'ambitious')),
+  period_start text not null default '',
+  period_end text not null default '',
+  position integer not null default 0 check (position >= 0),
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.long_term_targets
+  add column if not exists descriptions jsonb not null default '[]'::jsonb;
+
+alter table public.long_term_targets
+  add column if not exists pathways jsonb not null default '[]'::jsonb;
+
+alter table public.goals
+  add column if not exists problem_solving_entries jsonb not null default '[]'::jsonb;
+
 alter table public.actions
   add column if not exists work_experience_title text not null default '';
 
 alter table public.actions
   add column if not exists work_experience_html text not null default '';
 
+alter table public.actions
+  add column if not exists motivational_feelings jsonb not null default '{}'::jsonb;
+
 alter table public.exercise_actions
   add column if not exists work_experience_title text not null default '';
 
 alter table public.exercise_actions
   add column if not exists work_experience_html text not null default '';
+
+alter table public.exercise_actions
+  add column if not exists motivational_feelings jsonb not null default '{}'::jsonb;
 
 create table if not exists public.writing_templates (
   id text primary key,
@@ -194,6 +227,23 @@ create table if not exists public.daily_achievements (
   primary key (user_id, achievement_date)
 );
 
+create table if not exists public.daily_flames (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  flame_date text not null,
+  feelings jsonb not null default '{}'::jsonb,
+  primary key (user_id, flame_date)
+);
+
+create table if not exists public.flame_entries (
+  id text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  dimension text not null check (dimension in ('autonomy', 'competence', 'meaning', 'connection')),
+  content text not null default '',
+  intensity integer check (intensity between 1 and 10),
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
 create table if not exists public.user_settings (
   user_id uuid primary key references auth.users (id) on delete cascade,
   conservative_minutes integer not null default 60,
@@ -201,6 +251,8 @@ create table if not exists public.user_settings (
 );
 
 create index if not exists idx_goals_user_id on public.goals (user_id);
+create index if not exists idx_long_term_targets_user_category_position
+  on public.long_term_targets (user_id, category, position);
 create index if not exists idx_goal_sub_targets_user_id on public.goal_sub_targets (user_id);
 create index if not exists idx_actions_user_id on public.actions (user_id);
 create index if not exists idx_exercise_goals_user_id on public.exercise_goals (user_id);
@@ -209,9 +261,12 @@ create index if not exists idx_writing_templates_user_id on public.writing_templ
 create index if not exists idx_writing_template_sections_user_id on public.writing_template_sections (user_id);
 create index if not exists idx_writing_entries_user_id on public.writing_entries (user_id);
 create index if not exists idx_writing_entry_answers_user_id on public.writing_entry_answers (user_id);
+create index if not exists idx_daily_flames_user_id on public.daily_flames (user_id);
+create index if not exists idx_flame_entries_user_id on public.flame_entries (user_id);
 
 alter table public.app_states enable row level security;
 alter table public.goals enable row level security;
+alter table public.long_term_targets enable row level security;
 alter table public.goal_sub_targets enable row level security;
 alter table public.actions enable row level security;
 alter table public.exercise_goals enable row level security;
@@ -223,6 +278,8 @@ alter table public.writing_entry_answers enable row level security;
 alter table public.weekly_plans enable row level security;
 alter table public.daily_plans enable row level security;
 alter table public.daily_achievements enable row level security;
+alter table public.daily_flames enable row level security;
+alter table public.flame_entries enable row level security;
 alter table public.user_settings enable row level security;
 
 drop policy if exists "app_states_select_own" on public.app_states;
@@ -242,6 +299,15 @@ drop policy if exists "goals_update_own" on public.goals;
 create policy "goals_update_own" on public.goals for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "goals_delete_own" on public.goals;
 create policy "goals_delete_own" on public.goals for delete to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "long_term_targets_select_own" on public.long_term_targets;
+create policy "long_term_targets_select_own" on public.long_term_targets for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "long_term_targets_insert_own" on public.long_term_targets;
+create policy "long_term_targets_insert_own" on public.long_term_targets for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "long_term_targets_update_own" on public.long_term_targets;
+create policy "long_term_targets_update_own" on public.long_term_targets for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "long_term_targets_delete_own" on public.long_term_targets;
+create policy "long_term_targets_delete_own" on public.long_term_targets for delete to authenticated using (auth.uid() = user_id);
 
 drop policy if exists "goal_sub_targets_select_own" on public.goal_sub_targets;
 create policy "goal_sub_targets_select_own" on public.goal_sub_targets for select to authenticated using (auth.uid() = user_id);
@@ -342,6 +408,24 @@ create policy "daily_achievements_update_own" on public.daily_achievements for u
 drop policy if exists "daily_achievements_delete_own" on public.daily_achievements;
 create policy "daily_achievements_delete_own" on public.daily_achievements for delete to authenticated using (auth.uid() = user_id);
 
+drop policy if exists "daily_flames_select_own" on public.daily_flames;
+create policy "daily_flames_select_own" on public.daily_flames for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "daily_flames_insert_own" on public.daily_flames;
+create policy "daily_flames_insert_own" on public.daily_flames for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "daily_flames_update_own" on public.daily_flames;
+create policy "daily_flames_update_own" on public.daily_flames for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "daily_flames_delete_own" on public.daily_flames;
+create policy "daily_flames_delete_own" on public.daily_flames for delete to authenticated using (auth.uid() = user_id);
+
+drop policy if exists "flame_entries_select_own" on public.flame_entries;
+create policy "flame_entries_select_own" on public.flame_entries for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "flame_entries_insert_own" on public.flame_entries;
+create policy "flame_entries_insert_own" on public.flame_entries for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "flame_entries_update_own" on public.flame_entries;
+create policy "flame_entries_update_own" on public.flame_entries for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "flame_entries_delete_own" on public.flame_entries;
+create policy "flame_entries_delete_own" on public.flame_entries for delete to authenticated using (auth.uid() = user_id);
+
 drop policy if exists "user_settings_select_own" on public.user_settings;
 create policy "user_settings_select_own" on public.user_settings for select to authenticated using (auth.uid() = user_id);
 drop policy if exists "user_settings_insert_own" on public.user_settings;
@@ -355,6 +439,8 @@ drop trigger if exists touch_app_states_updated_at on public.app_states;
 create trigger touch_app_states_updated_at before update on public.app_states for each row execute procedure public.touch_updated_at();
 drop trigger if exists touch_goals_updated_at on public.goals;
 create trigger touch_goals_updated_at before update on public.goals for each row execute procedure public.touch_updated_at();
+drop trigger if exists touch_long_term_targets_updated_at on public.long_term_targets;
+create trigger touch_long_term_targets_updated_at before update on public.long_term_targets for each row execute procedure public.touch_updated_at();
 drop trigger if exists touch_goal_sub_targets_updated_at on public.goal_sub_targets;
 create trigger touch_goal_sub_targets_updated_at before update on public.goal_sub_targets for each row execute procedure public.touch_updated_at();
 drop trigger if exists touch_actions_updated_at on public.actions;
@@ -367,3 +453,5 @@ drop trigger if exists touch_writing_templates_updated_at on public.writing_temp
 create trigger touch_writing_templates_updated_at before update on public.writing_templates for each row execute procedure public.touch_updated_at();
 drop trigger if exists touch_writing_entries_updated_at on public.writing_entries;
 create trigger touch_writing_entries_updated_at before update on public.writing_entries for each row execute procedure public.touch_updated_at();
+drop trigger if exists touch_flame_entries_updated_at on public.flame_entries;
+create trigger touch_flame_entries_updated_at before update on public.flame_entries for each row execute procedure public.touch_updated_at();

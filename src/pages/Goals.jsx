@@ -1,10 +1,15 @@
-import React, { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useEffect, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { listGoals, deleteGoal, updateGoal, STORAGE_SYNC_EVENT } from '../storage/storage'
 import { Sparkles, Flame, BadgeCheck } from 'lucide-react'
+import LongTermTargets from './LongTermTargets'
 
 export default function Goals() {
   const [goals, setGoals] = useState(() => listGoals())
+  const [searchParams, setSearchParams] = useSearchParams()
+  const currentTargetsTabRef = useRef(null)
+  const longTermTargetsTabRef = useRef(null)
+  const isLongTermView = searchParams.get('view') === 'long-term'
 
   function getStartDate(g) {
     return g?.startDate || (g?.createdAt ? String(g.createdAt).slice(0, 10) : '')
@@ -46,58 +51,132 @@ export default function Goals() {
     setGoals(listGoals())
   }
 
+  function selectView(view, shouldFocus = false) {
+    const nextParams = new URLSearchParams(searchParams)
+    if (view === 'long-term') nextParams.set('view', 'long-term')
+    else nextParams.delete('view')
+    setSearchParams(nextParams)
+
+    if (shouldFocus) {
+      window.requestAnimationFrame(() => {
+        const nextRef = view === 'long-term' ? longTermTargetsTabRef : currentTargetsTabRef
+        nextRef.current?.focus()
+      })
+    }
+  }
+
+  function handleViewTabKeyDown(event) {
+    let nextView = ''
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || event.key === 'End') {
+      nextView = 'long-term'
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'Home') {
+      nextView = 'current'
+    }
+
+    if (!nextView) return
+    event.preventDefault()
+    selectView(nextView, true)
+  }
+
   return (
     <div className="page goals-page">
       <div className="page-shell">
-        <div className="page-header">
-          <div>
-            <h2 className="page-title">目标</h2>
-            <div className="page-subtitle">记录你想要努力的事情，并为行动与回顾提供锚点。</div>
-          </div>
-          <Link className="create-btn" to="/new-goal">＋ 新建目标</Link>
+        <div className="goals-view-tabs" role="tablist" aria-label="选择目标视图">
+          <button
+            ref={currentTargetsTabRef}
+            id="current-targets-tab"
+            type="button"
+            role="tab"
+            aria-selected={!isLongTermView}
+            aria-controls="current-targets-panel"
+            tabIndex={isLongTermView ? -1 : 0}
+            className={`goals-view-tab${isLongTermView ? '' : ' is-active'}`}
+            onClick={() => selectView('current')}
+            onKeyDown={handleViewTabKeyDown}
+          >
+            当前目标
+          </button>
+          <button
+            ref={longTermTargetsTabRef}
+            id="long-term-targets-tab"
+            type="button"
+            role="tab"
+            aria-selected={isLongTermView}
+            aria-controls="long-term-targets-panel"
+            tabIndex={isLongTermView ? 0 : -1}
+            className={`goals-view-tab${isLongTermView ? ' is-active' : ''}`}
+            onClick={() => selectView('long-term')}
+            onKeyDown={handleViewTabKeyDown}
+          >
+            长期目标
+          </button>
         </div>
 
-        <div className="goals-grid">
-          {goals.length ? goals.map((g) => (
-            <div className="goal-card" key={g.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div className="goal-title"><Link to={`/action/${g.id}`}>{g.title}</Link></div>
-                  <div className="goal-meta">{g.reasons && g.reasons.length ? g.reasons[0] : '没有填写理由'}</div>
-                  <div className="goal-meta" style={{ marginTop: 4 }}>
-                    开始：{getStartDate(g) || '未记录'}
-                    {g.status === 'done' ? ` · 做完啦：${getCompletedDate(g) || '未记录'}` : ''}
+        {isLongTermView ? (
+          <div
+            id="long-term-targets-panel"
+            role="tabpanel"
+            aria-labelledby="long-term-targets-tab"
+          >
+            <LongTermTargets />
+          </div>
+        ) : (
+          <div
+            id="current-targets-panel"
+            role="tabpanel"
+            aria-labelledby="current-targets-tab"
+          >
+            <div className="page-header">
+              <div>
+                <h2 className="page-title">目标</h2>
+                <div className="page-subtitle">记录你想要努力的事情，并为行动与回顾提供锚点。</div>
+              </div>
+              <Link className="create-btn" to="/new-goal">＋ 新建目标</Link>
+            </div>
+
+            <div className="goals-grid">
+              {goals.length ? goals.map((g) => (
+                <div className="goal-card" key={g.id}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div className="goal-title"><Link to={`/action/${g.id}`}>{g.title}</Link></div>
+                      <div className="goal-meta">{g.reasons && g.reasons.length ? g.reasons[0] : '没有填写理由'}</div>
+                      <div className="goal-meta" style={{ marginTop: 4 }}>
+                        开始：{getStartDate(g) || '未记录'}
+                        {g.status === 'done' ? ` · 做完啦：${getCompletedDate(g) || '未记录'}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+                      <span
+                        className={`goal-tag goal-tag-${g.status || 'want'}`}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => {
+                          const next = g.status === 'want' ? 'doing' : g.status === 'doing' ? 'done' : 'want'
+                          handleStatusChange(g.id, next)
+                        }}
+                        title="点击切换状态：想要做 → 正在做 → 做完了"
+                      >
+                        <StatusIcon status={g.status} />
+                        {g.status === 'want' ? '想要做' : g.status === 'doing' ? '正在做' : '做完了'}
+                      </span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Link className="small-btn ghost" to={`/edit-goal/${g.id}`}>编辑</Link>
+                        <button className="small-btn danger" onClick={() => handleDelete(g.id)}>删除</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <div className="goal-meta">预期：{g.expectedOutcome || '未设置'}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
-                  <span
-                    className={`goal-tag goal-tag-${g.status || 'want'}`}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => {
-                      const next = g.status === 'want' ? 'doing' : g.status === 'doing' ? 'done' : 'want'
-                      handleStatusChange(g.id, next)
-                    }}
-                    title="点击切换状态：想要做 → 正在做 → 做完了"
-                  >
-                    <StatusIcon status={g.status} />
-                    {g.status === 'want' ? '想要做' : g.status === 'doing' ? '正在做' : '做完了'}
-                  </span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <Link className="small-btn ghost" to={`/edit-goal/${g.id}`}>编辑</Link>
-                    <button className="small-btn danger" onClick={() => handleDelete(g.id)}>删除</button>
-                  </div>
+              )) : (
+                <div className="card-surface" style={{ padding: 18 }}>
+                  还没有目标，点击右上角“＋ 新建目标”开始吧～
                 </div>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <div className="goal-meta">预期：{g.expectedOutcome || '未设置'}</div>
-              </div>
+              )}
             </div>
-          )) : (
-            <div className="card-surface" style={{ padding: 18 }}>
-              还没有目标，点击右上角“＋ 新建目标”开始吧～
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   )

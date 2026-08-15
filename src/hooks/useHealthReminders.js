@@ -1,41 +1,23 @@
 import { useEffect, useState } from 'react'
-import { STORAGE_SYNC_EVENT } from '../storage/storage'
-
-// Note: storage/storage.js does not export readState; reimplement lightweight reader
-function readStateRaw() {
-  try {
-    const raw = localStorage.getItem('action-journal:state')
-    if (!raw) return { goals: {}, actions: {}, settings: { conservativeMinutes: 60, ambitiousMinutes: 180 } }
-    const parsed = JSON.parse(raw)
-    parsed.settings = parsed.settings || { conservativeMinutes: 60, ambitiousMinutes: 180 }
-    return parsed
-  } catch {
-    return { goals: {}, actions: {}, settings: { conservativeMinutes: 60, ambitiousMinutes: 180 } }
-  }
-}
+import { getSettings, listAllActions, STORAGE_SYNC_EVENT } from '../storage/storage'
+import { getWorkDurationTotals } from '../lib/workDuration'
 
 function computeReminderInfo() {
-  const state = readStateRaw()
-  const { actions = {}, settings = {} } = state
+  let actions = []
+  let settings = {}
+  try {
+    actions = listAllActions()
+    settings = getSettings()
+  } catch {
+    // Storage may still be initializing. The sync event will recompute once ready.
+  }
+
   const conservative = settings.conservativeMinutes ?? 60
   const ambitious = settings.ambitiousMinutes ?? 180
+  const { totalMinutesToday, totalMinutesThisWeek } = getWorkDurationTotals(actions)
 
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const todayStartISO = todayStart.toISOString()
-
-  let total = 0
-  Object.values(actions || {}).forEach((action) => {
-    if (!action.startTime) return
-    const start = new Date(action.startTime)
-    const end = action.endTime ? new Date(action.endTime) : new Date()
-    const boundedStart = start < new Date(todayStartISO) ? new Date(todayStartISO) : start
-    if (end <= boundedStart) return
-    total += Math.round((end - boundedStart) / 60000)
-  })
-
-  const status = total >= ambitious ? 'danger' : total >= conservative ? 'warn' : 'normal'
-  return { status, totalMinutesToday: total, conservativeMinutes: conservative, ambitiousMinutes: ambitious }
+  const status = totalMinutesToday >= ambitious ? 'danger' : totalMinutesToday >= conservative ? 'warn' : 'normal'
+  return { status, totalMinutesToday, totalMinutesThisWeek, conservativeMinutes: conservative, ambitiousMinutes: ambitious }
 }
 
 export default function useHealthReminders() {

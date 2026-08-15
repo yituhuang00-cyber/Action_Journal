@@ -2962,6 +2962,281 @@ select:focus {
   line-height: 1.45;
 }
 
+/* Goal problem-solving journal */
+.goal-detail-page .card-problem-solving-summary {
+  grid-column: 1 / -1;
+}
+
+.problem-solving-summary-header,
+.problem-solving-summary-item,
+.problem-solving-header,
+.problem-solving-footer,
+.problem-solving-question-head,
+.problem-solving-progress-copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.problem-solving-summary-header .btn-primary,
+.problem-solving-summary-actions .small-btn {
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.problem-solving-summary-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.problem-solving-summary-item {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fbfdff;
+}
+
+.problem-solving-summary-copy {
+  min-width: 0;
+}
+
+.problem-solving-summary-title {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.problem-solving-summary-preview {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--text-soft);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.problem-solving-summary-meta {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.problem-solving-summary-actions,
+.problem-solving-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.problem-solving-summary-empty {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  background: #fbfdff;
+}
+
+.problem-solving-summary-empty strong {
+  color: var(--text);
+}
+
+.problem-solving-page .main-col {
+  min-width: 0;
+}
+
+.problem-solving-shell {
+  display: grid;
+  width: min(980px, 100%);
+  margin: 0 auto;
+  gap: 14px;
+}
+
+.problem-solving-page .card,
+.problem-solving-question-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.problem-solving-header {
+  padding: 20px;
+}
+
+.problem-solving-header h1 {
+  margin: 3px 0 5px;
+}
+
+.problem-solving-header p {
+  max-width: 680px;
+  margin: 0 0 6px;
+  color: var(--text-soft);
+  line-height: 1.6;
+}
+
+.problem-solving-kicker,
+.problem-solving-question-index {
+  color: #9a5c7f;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.problem-solving-progress {
+  padding: 14px 18px;
+}
+
+.problem-solving-progress-copy {
+  align-items: center;
+}
+
+.problem-solving-progress-copy span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.problem-solving-progress-track {
+  overflow: hidden;
+  height: 8px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: #e8eef7;
+}
+
+.problem-solving-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7c9ff4, #b181d7);
+  transition: width 0.22s ease;
+}
+
+.problem-solving-question-list {
+  display: grid;
+  gap: 14px;
+}
+
+.problem-solving-question-card {
+  padding: 18px;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.problem-solving-question-card.is-skipped {
+  border-style: dashed;
+  background: #fafbfd;
+}
+
+.problem-solving-question-head h2 {
+  max-width: 760px;
+  margin: 4px 0 12px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.problem-solving-question-card textarea {
+  display: block;
+  width: 100%;
+  min-height: 150px;
+  padding: 14px 16px;
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.problem-solving-question-card textarea::placeholder {
+  color: #93a6a0;
+  opacity: 0.9;
+  white-space: pre-wrap;
+}
+
+.problem-solving-skipped-state {
+  display: grid;
+  width: 100%;
+  min-height: 104px;
+  place-content: center;
+  gap: 4px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  background: #f7f9fc;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+}
+
+.problem-solving-skipped-state span {
+  font-weight: 800;
+}
+
+.problem-solving-skipped-state small {
+  color: var(--muted);
+}
+
+.problem-solving-footer {
+  position: sticky;
+  z-index: 4;
+  bottom: 12px;
+  align-items: center;
+  padding: 14px 18px;
+}
+
+.problem-solving-footer strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.problem-solving-missing {
+  display: grid;
+  gap: 12px;
+  width: min(720px, 100%);
+  padding: 20px;
+}
+
+@media (max-width: 700px) {
+  .problem-solving-summary-header,
+  .problem-solving-summary-item,
+  .problem-solving-header,
+  .problem-solving-footer,
+  .problem-solving-question-head,
+  .problem-solving-progress-copy {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .problem-solving-summary-actions,
+  .problem-solving-header-actions {
+    width: 100%;
+  }
+
+  .problem-solving-summary-actions > *,
+  .problem-solving-header-actions > * {
+    flex: 1;
+  }
+
+  .problem-solving-question-head h2 {
+    font-size: 16px;
+  }
+
+  .problem-solving-footer {
+    position: static;
+  }
+}
+
+.sidebar-card-stat + .sidebar-card-stat {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
 .app-workspace .app-header {
   position: sticky !important;
   top: 0;
@@ -5602,6 +5877,77 @@ select:focus {
   outline: 3px solid rgba(37, 99, 235, 0.12) !important;
 }
 
+.daily-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.daily-section-date-text {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.achievements-header-tools {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.daily-date-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.daily-date-nav-btn {
+  min-width: 36px;
+  padding-inline: 0 !important;
+}
+
+.daily-date-picker {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.daily-date-picker input[type="date"] {
+  min-height: 28px;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--text);
+  font: inherit;
+}
+
+.daily-date-picker input[type="date"]:focus {
+  border-color: transparent !important;
+  outline: none !important;
+}
+
+.daily-date-toolbar .small-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.daily-date-toolbar .small-btn:disabled:hover {
+  color: var(--text-soft) !important;
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+}
+
 .goal-tag,
 .weekly-status-pill,
 .step-badge {
@@ -5673,6 +6019,25 @@ select:focus {
     flex-direction: column;
   }
 
+  .achievements-header-tools,
+  .daily-section-heading {
+    width: 100%;
+  }
+
+  .achievements-header-tools {
+    justify-items: stretch;
+  }
+
+  .daily-date-toolbar {
+    justify-content: flex-start;
+  }
+
+  .daily-date-picker {
+    flex: 1;
+    justify-content: space-between;
+    min-width: 190px;
+  }
+
   .page-with-sidebar {
     flex-direction: column;
   }
@@ -5688,5 +6053,406 @@ select:focus {
   .main-col {
     width: 100%;
     padding-left: 0;
+  }
+}
+
+/* Four motivational feelings and Flame page */
+.motivation-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.motivation-editor-header .muted {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.motivation-editor-grid,
+.motivation-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.motivation-editor-card,
+.motivation-summary-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fbfdff;
+}
+
+.motivation-editor-card {
+  padding: 14px;
+}
+
+.motivation-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.motivation-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.motivation-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.motivation-fields textarea {
+  width: 100%;
+  min-height: 78px;
+  box-sizing: border-box;
+  resize: vertical;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.motivation-intensity-field {
+  display: grid;
+  gap: 8px;
+}
+
+.motivation-intensity-head,
+.motivation-intensity-controls,
+.motivation-summary-title,
+.flame-dimension-header,
+.flame-action-card-head,
+.flame-action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.motivation-intensity-head {
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.motivation-intensity-head strong {
+  color: var(--primary-strong);
+}
+
+.motivation-intensity-controls input[type="range"] {
+  flex: 1;
+  min-width: 90px;
+}
+
+.motivation-intensity-controls input[type="range"].is-empty {
+  opacity: 0.45;
+}
+
+.motivation-intensity-controls input[type="number"] {
+  width: 68px;
+}
+
+.motivation-summary {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.motivation-summary-heading {
+  margin-bottom: 8px;
+  font-weight: 800;
+}
+
+.motivation-summary-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.motivation-summary-title {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.motivation-summary-title strong {
+  color: var(--primary-strong);
+}
+
+.flame-shell {
+  display: grid;
+  gap: 16px;
+}
+
+.flame-page-header {
+  margin-bottom: 0;
+}
+
+.flame-stats {
+  grid-template-columns: repeat(2, minmax(110px, 1fr));
+}
+
+.flame-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.flame-toolbar .muted {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.flame-sort-control {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 5px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.flame-dimension-list {
+  display: grid;
+  gap: 16px;
+}
+
+.flame-dimension-board {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.flame-dimension-header {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, #fffaf5, #f8fbff);
+}
+
+.flame-dimension-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  font-size: 21px;
+}
+
+.flame-dimension-header h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+}
+
+.flame-dimension-header p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+}
+
+.flame-count-chip {
+  margin-left: auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: var(--primary-strong);
+  background: var(--primary-soft);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.flame-board-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(340px, 1.1fr);
+  gap: 0;
+}
+
+.flame-daily-entry,
+.flame-action-column {
+  min-width: 0;
+  padding: 18px;
+}
+
+.flame-daily-entry {
+  border-right: 1px solid var(--border);
+  background: #fcfdff;
+}
+
+.flame-entry-kicker,
+.flame-action-kind {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.flame-entry-kicker {
+  margin-bottom: 12px;
+  color: var(--primary-strong);
+}
+
+.flame-save-hint {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.flame-create-actions,
+.flame-record-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flame-create-actions {
+  margin-top: 14px;
+}
+
+.flame-record-actions .small-btn,
+.flame-record-actions .btn-primary {
+  text-decoration: none;
+}
+
+.flame-entry-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.flame-entry-actions .muted {
+  font-size: 12px;
+}
+
+.flame-entry-actions .btn-primary {
+  flex: 0 0 auto;
+}
+
+.flame-action-list {
+  display: grid;
+  gap: 10px;
+}
+
+.flame-action-card {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.flame-action-card.is-editing {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.flame-action-card-head {
+  align-items: flex-start;
+}
+
+.flame-action-card-head strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+}
+
+.flame-intensity-badge {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #9a3412;
+  background: #ffedd5;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.flame-action-copy {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.flame-action-footer {
+  padding-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.flame-action-footer .small-btn {
+  text-decoration: none;
+}
+
+.flame-empty-state {
+  padding: 18px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: #fbfdff;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .motivation-editor-grid,
+  .motivation-summary-grid,
+  .flame-board-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .flame-daily-entry {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .flame-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 640px) {
+  .motivation-intensity-controls,
+  .flame-dimension-header,
+  .flame-action-card-head {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .flame-count-chip {
+    margin-left: 0;
+  }
+
+  .flame-entry-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .flame-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

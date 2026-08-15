@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { getActionFeelingText, hasExpectedDuration, hasText } from '../lib/actionRecord'
+import {
+  getProblemSolvingEntryPreview,
+  getProblemSolvingEntryStats,
+} from '../lib/problemSolving'
 import SidebarGoals from '../components/SidebarGoals'
 import ActionTimer from '../components/ActionTimer'
 import ActionReview from '../components/ActionReview'
+import { MotivationalFeelingsSummary } from '../components/MotivationalFeelings'
 import {
   getGoal,
   listActionsByGoal,
@@ -14,6 +19,7 @@ import {
   updateSubTarget,
   deleteSubTarget,
   deleteAction,
+  deleteProblemSolvingEntry,
 } from '../storage/storage'
 
 const SUB_TARGET_STATUS_OPTIONS = [
@@ -469,6 +475,25 @@ export default function GoalDetail() {
     }
   }
 
+  function getProblemSolvingPath(entryId = 'new') {
+    return `/goals/${id}/problem-solving/${entryId}`
+  }
+
+  function getProblemSolvingState() {
+    const query = searchParams.toString()
+    return {
+      returnTo: location.pathname + (query ? `?${query}` : ''),
+      basePath: location.pathname.startsWith('/action') ? '/action' : '/goal',
+    }
+  }
+
+  function handleDeleteProblemSolvingEntry(entryId) {
+    const ok = window.confirm('确定删除这条问题解决记录吗？此操作不可恢复。')
+    if (!ok) return
+    deleteProblemSolvingEntry(id, entryId)
+    load()
+  }
+
   function isActionInScope(action) {
     if (!action.startTime) return false
     if (timeScope === 'all') return true
@@ -519,7 +544,9 @@ export default function GoalDetail() {
   })
 
   const workExperienceActions = actions.filter((action) => action.workExperienceTitle || action.workExperienceHtml)
-  const subTargets = goal?.subTargets || []
+  const problemSolvingEntries = [...(goal?.problemSolvingEntries || [])]
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+  const subTargets = useMemo(() => goal?.subTargets || [], [goal])
   const subTargetWeekOptions = useMemo(() => {
     const optionMap = new Map()
     subTargets.forEach((subTarget) => {
@@ -826,6 +853,7 @@ export default function GoalDetail() {
                           {renderActionTextRow('行动感受', getActionFeelingText(a))}
                           {renderActionTextRow('庆祝小活动', a.celebration)}
                           {renderActionTextRow('下一步行动', a.nextAction || a.notes || '')}
+                          <MotivationalFeelingsSummary value={a.motivationalFeelings} />
                           {(a.workExperienceTitle || a.workExperienceHtml) && (
                             <div className="action-kv-full action-work-experience-row">
                               <strong>工作经验：</strong>
@@ -862,6 +890,56 @@ export default function GoalDetail() {
                   </div>
                 ) : (
                   <div className="muted">当前还没有填写任何工作经验。</div>
+                )}
+              </div>
+
+              <div className="card card-problem-solving-summary">
+                <div className="problem-solving-summary-header">
+                  <div>
+                    <h3>问题解决</h3>
+                    <div className="muted">通过 9 个引导问题，把问题现状、可用资源、方案和下一步行动梳理清楚。</div>
+                  </div>
+                  <Link
+                    className="btn-primary"
+                    to={getProblemSolvingPath()}
+                    state={getProblemSolvingState()}
+                  >
+                    解决问题
+                  </Link>
+                </div>
+
+                {problemSolvingEntries.length ? (
+                  <div className="problem-solving-summary-list">
+                    {problemSolvingEntries.map((entry, index) => {
+                      const stats = getProblemSolvingEntryStats(entry)
+                      return (
+                        <article className="problem-solving-summary-item" key={entry.id}>
+                          <div className="problem-solving-summary-copy">
+                            <div className="problem-solving-summary-title">问题梳理 {problemSolvingEntries.length - index}</div>
+                            <div className="problem-solving-summary-preview">{getProblemSolvingEntryPreview(entry)}</div>
+                            <div className="problem-solving-summary-meta">
+                              {entry.updatedAt ? formatDateTime(entry.updatedAt) : '未记录时间'} · 已回答 {stats.answered} 题 · 已跳过 {stats.skipped} 题
+                            </div>
+                          </div>
+                          <div className="problem-solving-summary-actions">
+                            <Link
+                              className="small-btn ghost"
+                              to={getProblemSolvingPath(entry.id)}
+                              state={getProblemSolvingState()}
+                            >
+                              编辑
+                            </Link>
+                            <button type="button" className="small-btn danger" onClick={() => handleDeleteProblemSolvingEntry(entry.id)}>删除</button>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="problem-solving-summary-empty">
+                    <strong>还没有问题解决记录</strong>
+                    <span>遇到卡点时，用一次引导式书写找到可以开始的下一步。</span>
+                  </div>
                 )}
               </div>
             </div>

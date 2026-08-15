@@ -3,6 +3,7 @@ import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { getExerciseFeelingText, hasText } from '../lib/actionRecord'
 import SidebarExercises from '../components/SidebarExercises'
 import ExerciseReview from '../components/ExerciseReview'
+import { MotivationalFeelingsSummary } from '../components/MotivationalFeelings'
 import {
   addExerciseAction,
   deleteExerciseAction,
@@ -391,6 +392,7 @@ export default function ExerciseDetail() {
                           {renderExerciseTextRow('运动内容', action.content)}
                           {renderExerciseTextRow('运动感受', getExerciseFeelingText(action))}
                           {renderExerciseTextRow('庆祝小活动', action.celebration)}
+                          <MotivationalFeelingsSummary value={action.motivationalFeelings} />
                           {(action.workExperienceTitle || action.workExperienceHtml) && (
                             <div className="action-kv-full action-work-experience-row">
                               <strong>运动经验：</strong>

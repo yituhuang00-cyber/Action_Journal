@@ -15,6 +15,8 @@ VITE_SUPABASE_ANON_KEY=your-public-anon-key
 3. 在 Supabase SQL Editor 执行 `supabase/schema.sql`
 4. 启动开发环境：`npm run dev`
 
+已有 Supabase 项目在发布新版前也需要重新执行一次 `supabase/schema.sql`。脚本可重复执行，并会创建长期目标所需的 `long_term_targets` 表；请先更新数据库，再发布前端。
+
 ## 当前同步方式
 
 - 登录后，数据会拆分写入多张业务表，例如 `goals`、`actions`、`writing_templates`、`daily_plans`

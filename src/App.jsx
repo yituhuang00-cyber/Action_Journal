@@ -1,7 +1,7 @@
 import './App.css'
 import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { Activity, BookOpenText, CalendarDays, Dumbbell, ListChecks, PenLine, Target } from 'lucide-react'
+import { Activity, BookOpenText, CalendarDays, Dumbbell, Flame, PenLine, Target } from 'lucide-react'
 import Goals from './pages/Goals'
 import GoalDetail from './pages/GoalDetail'
 import ActionEntry from './pages/Action'
@@ -13,6 +13,7 @@ import Writing from './pages/Writing'
 import NewGoal from './pages/NewGoal'
 import EditGoal from './pages/EditGoal'
 import WorkExperience from './pages/WorkExperience'
+import ProblemSolving from './pages/ProblemSolving'
 import NewExercise from './pages/NewExercise'
 import EditExercise from './pages/EditExercise'
 import ExerciseWorkExperience from './pages/ExerciseWorkExperience'
@@ -29,6 +30,13 @@ function padDatePart(value) {
 
 function getDateKey(date = new Date()) {
   return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`
+}
+
+function formatWorkDuration(totalMinutes) {
+  const normalizedMinutes = Math.max(0, Math.round(Number(totalMinutes) || 0))
+  const hours = Math.floor(normalizedMinutes / 60)
+  const minutes = normalizedMinutes % 60
+  return `${hours}小时${minutes}分钟`
 }
 
 function sanitizeBackupSegment(value, fallback = 'local') {
@@ -85,7 +93,7 @@ function AppContent({ reminders, syncStatus, session, signOut, localMode, syncAv
     { end: true, to: '/', label: '行动', hint: '今日执行', icon: Activity },
     { to: '/goals', label: '目标', hint: '方向与结果', icon: Target },
     { to: '/planner', label: '规划', hint: '周计划 / 日计划', icon: CalendarDays },
-    { to: '/achievements', label: '成就', hint: '每日复盘', icon: ListChecks },
+    { to: '/achievements', label: '火苗', hint: '四种心理感受', icon: Flame },
     { to: '/exercise', label: '运动', hint: '身体行动', icon: Dumbbell },
     { to: '/writing', label: '书写', hint: '记录与整理', icon: PenLine },
   ]
@@ -227,8 +235,14 @@ function AppContent({ reminders, syncStatus, session, signOut, localMode, syncAv
           </nav>
 
           <div className="sidebar-card">
-            <div className="sidebar-card-label">今日行动</div>
-            <div className="sidebar-card-value">{reminders.totalMinutesToday} 分钟</div>
+            <div className="sidebar-card-stat">
+              <div className="sidebar-card-label">本周专注时长</div>
+              <div className="sidebar-card-value">{formatWorkDuration(reminders.totalMinutesThisWeek)}</div>
+            </div>
+            <div className="sidebar-card-stat">
+              <div className="sidebar-card-label">本日专注时长</div>
+              <div className="sidebar-card-value">{formatWorkDuration(reminders.totalMinutesToday)}</div>
+            </div>
             <div className="sidebar-card-foot">
               <IconStatus status={reminders.status} />
               <span>{renderSyncStatus(localMode)}</span>
@@ -288,6 +302,8 @@ function AppContent({ reminders, syncStatus, session, signOut, localMode, syncAv
               <Route path="/action" element={<ActionEntry />} />
               <Route path="/action/:id" element={<GoalDetail />} />
               <Route path="/goals/:goalId/actions/:actionId/work-experience" element={<WorkExperience />} />
+              <Route path="/goals/:goalId/problem-solving/new" element={<ProblemSolving />} />
+              <Route path="/goals/:goalId/problem-solving/:entryId" element={<ProblemSolving />} />
               <Route path="/exercise" element={<ExerciseEntry />} />
               <Route path="/exercise/:id" element={<ExerciseDetail />} />
               <Route path="/exercise-goals/:goalId/actions/:actionId/work-experience" element={<ExerciseWorkExperience />} />

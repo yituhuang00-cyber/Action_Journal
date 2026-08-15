@@ -12,6 +12,30 @@
  *   startDate: string, // 目标开始日期（YYYY-MM-DD）
  *   completedDate: string | null, // 目标完成日期（YYYY-MM-DD），未完成则为 null
  *   subTargets: SubTarget[], // 目标拆分出的子目标
+ *   problemSolvingEntries: ProblemSolvingEntry[], // 针对当前目标保存的问题解决梳理记录
+ *   createdAt: ISOString,
+ *   updatedAt: ISOString
+ * }
+ *
+ * ProblemSolvingEntry:
+ * {
+ *   id: string,
+ *   answers: Array<{ questionId: string, content: string, skipped: boolean }>,
+ *   createdAt: ISOString,
+ *   updatedAt: ISOString
+ * }
+ *
+ * LongTermTarget (长期目标):
+ * {
+ *   id: string,
+ *   title: string,
+ *   reasons: string[], // 想实现该目标的一个或多个理由
+ *   descriptions: string[], // 对目标的具体描述，可为空或包含多个要点
+ *   pathways: string[], // 实现目标的一个或多个路径
+ *   category: 'conservative' | 'ambitious', // 保守型或进取型
+ *   periodStart: string, // 目标周期开始日期（YYYY-MM-DD）
+ *   periodEnd: string, // 计划达成日期（YYYY-MM-DD）
+ *   position: number, // 同一分类中的优先级顺序，数字越小越重要
  *   createdAt: ISOString,
  *   updatedAt: ISOString
  * }
@@ -56,20 +80,42 @@
  *   rant: string, // 兼容旧字段；归一化后存储合并后的行动感受
  *   bingo: string, // 兼容旧字段；归一化后不再单独呈现
  *   celebration: string, // 设计的庆祝事项
+ *   motivationalFeelings: MotivationalFeelings, // 自主感、胜任感、意义感、联结感
  *   workExperienceTitle: string, // 工作经验标题
  *   workExperienceHtml: string, // 富文本工作经验记录（HTML）
  *   createdAt: ISOString,
  *   updatedAt: ISOString
  * }
  *
+ * MotivationalFeelings:
+ * {
+ *   autonomy: { content: string, intensity: number | null },
+ *   competence: { content: string, intensity: number | null },
+ *   meaning: { content: string, intensity: number | null },
+ *   connection: { content: string, intensity: number | null }
+ * }
+ *
  * 存储结构（在 localStorage 中以一个对象保存）
  * {
  *   goals: { [id]: Goal },
+ *   longTermTargets: { [id]: LongTermTarget },
  *   actions: { [id]: Action },
  *   exerciseGoals: { [id]: ExerciseGoal },
  *   exerciseActions: { [id]: ExerciseAction },
  *   writingTemplates: { [id]: WritingTemplate },
- *   writingEntries: { [id]: WritingEntry }
+ *   writingEntries: { [id]: WritingEntry },
+ *   dailyFlames: { [date]: MotivationalFeelings }
+ *   flameEntries: { [id]: FlameEntry }
+ * }
+ *
+ * FlameEntry:
+ * {
+ *   id: string,
+ *   dimension: 'autonomy' | 'competence' | 'meaning' | 'connection',
+ *   content: string,
+ *   intensity: number | null,
+ *   createdAt: ISOString,
+ *   updatedAt: ISOString
  * }
  */
 
@@ -99,6 +145,7 @@
  *   feeling: string, // 运动感受（兼容旧 bingo 数据）
  *   bingo: string, // 兼容旧字段；归一化后不再单独呈现
  *   celebration: string,
+ *   motivationalFeelings: MotivationalFeelings,
  *   workExperienceTitle: string, // 运动经验标题
  *   workExperienceHtml: string, // 富文本运动经验记录（HTML）
  *   createdAt: ISOString,

@@ -1,3 +1,5 @@
+import { normalizeMotivationalFeelings } from './motivationalFeelings.js'
+
 function asString(value) {
   return typeof value === 'string' ? value : ''
 }
@@ -82,6 +84,7 @@ export function normalizeActionRecord(action = {}, actionId = action.id) {
     rant: feeling,
     bingo: '',
     celebration: trimText(action.celebration),
+    motivationalFeelings: normalizeMotivationalFeelings(action.motivationalFeelings),
     workExperienceTitle: trimText(action.workExperienceTitle),
     workExperienceHtml: asString(action.workExperienceHtml),
     createdAt: action.createdAt || now,
@@ -107,6 +110,7 @@ export function normalizeExerciseRecord(action = {}, actionId = action.id) {
     feeling,
     bingo: '',
     celebration: trimText(action.celebration),
+    motivationalFeelings: normalizeMotivationalFeelings(action.motivationalFeelings),
     workExperienceTitle: trimText(action.workExperienceTitle),
     workExperienceHtml: asString(action.workExperienceHtml),
     createdAt: action.createdAt || now,

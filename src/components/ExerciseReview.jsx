@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getExerciseFeelingText } from '../lib/actionRecord'
+import { normalizeMotivationalFeelings } from '../lib/motivationalFeelings'
+import { MotivationalFeelingsEditor } from './MotivationalFeelings'
 import { updateExerciseAction } from '../storage/storage'
 
 function isoToLocalInput(iso) {
@@ -20,10 +22,15 @@ function createDraft(action) {
     content: action?.content || '',
     feeling: getExerciseFeelingText(action),
     celebration: action?.celebration || '',
+    motivationalFeelings: normalizeMotivationalFeelings(action?.motivationalFeelings),
   }
 }
 
-export default function ExerciseReview({ action, exerciseTitle = '', onSave, onCancel } = {}) {
+export default function ExerciseReview(props = {}) {
+  return <ExerciseReviewForm key={props.action?.id || 'empty'} {...props} />
+}
+
+function ExerciseReviewForm({ action, exerciseTitle = '', onSave, onCancel } = {}) {
   const navigate = useNavigate()
   const [draft, setDraft] = useState(() => createDraft(action))
   const selectedExerciseLabel = exerciseTitle || action?.exerciseName || '当前运动'
@@ -57,6 +64,7 @@ export default function ExerciseReview({ action, exerciseTitle = '', onSave, onC
       feeling: draft.feeling,
       bingo: '',
       celebration: draft.celebration,
+      motivationalFeelings: draft.motivationalFeelings,
     }
   }
 
@@ -171,6 +179,11 @@ export default function ExerciseReview({ action, exerciseTitle = '', onSave, onC
           </div>
         </div>
       </div>
+
+      <MotivationalFeelingsEditor
+        value={draft.motivationalFeelings}
+        onChange={(motivationalFeelings) => setDraft((current) => ({ ...current, motivationalFeelings }))}
+      />
 
       <div className="review-actions">
         <button className="small-btn ghost" onClick={handleOpenWorkExperience}>运动经验</button>

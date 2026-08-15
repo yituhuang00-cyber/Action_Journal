@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import useHealthReminders from '../hooks/useHealthReminders'
 import {
+  addDaysToDateKey,
+  formatDateKeyForDisplay,
+  getTodayKey,
+  isValidDateKey,
+} from '../lib/dateKeys'
+import {
   getDailyPlan,
   getSettings,
   getWeeklyPlan,
@@ -280,7 +286,7 @@ function InlineEstimatedHoursField({
 
 export default function DailyPlanner() {
   const reminders = useHealthReminders()
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const todayStr = useMemo(() => getTodayKey(), [])
   const currentWeekDate = useMemo(() => new Date(), [])
   const currentWeekMeta = useMemo(() => getWeekMetaForDate(currentWeekDate), [currentWeekDate])
   const initialSettings = useMemo(() => getSettings(), [])
@@ -288,6 +294,7 @@ export default function DailyPlanner() {
   const activeWeekDate = useMemo(() => addWeeksToDate(currentWeekDate, activeWeekOffset), [activeWeekOffset, currentWeekDate])
   const activeWeekMeta = useMemo(() => getWeekMetaForDate(activeWeekDate), [activeWeekDate])
   const isViewingCurrentWeek = activeWeekMeta.weekKey === currentWeekMeta.weekKey
+  const [activePlanDate, setActivePlanDate] = useState(todayStr)
   const [planText, setPlanText] = useState(() => getDailyPlan(todayStr))
   const [conservative, setConservative] = useState(() => initialSettings.conservativeMinutes ?? 60)
   const [ambitious, setAmbitious] = useState(() => initialSettings.ambitiousMinutes ?? 180)
@@ -313,25 +320,41 @@ export default function DailyPlanner() {
   const [editingDraft, setEditingDraft] = useState({ startDate: '', endDate: '', estimatedHours: '', content: '' })
   const [pendingRemovalKey, setPendingRemovalKey] = useState('')
   const [showOnlyActiveWeeklyItems, setShowOnlyActiveWeeklyItems] = useState(false)
-  const planHydratedRef = useRef(false)
+  const skipPlanSaveRef = useRef(true)
+  const isViewingTodayPlan = activePlanDate === todayStr
+  const activePlanDateLabel = isViewingTodayPlan ? '今天' : formatDateKeyForDisplay(activePlanDate)
 
   const goals = listGoals()
   const weeklyPlan = getWeeklyPlan(activeWeekMeta.weekKey)
+
+  function normalizeSelectablePlanDate(dateKey) {
+    if (!isValidDateKey(dateKey)) return activePlanDate
+    return dateKey > todayStr ? todayStr : dateKey
+  }
+
+  function changePlanDate(dateKey) {
+    const nextDate = normalizeSelectablePlanDate(dateKey)
+    if (!nextDate || nextDate === activePlanDate) return
+    setDailyPlan(activePlanDate, planText)
+    skipPlanSaveRef.current = true
+    setActivePlanDate(nextDate)
+    setPlanText(getDailyPlan(nextDate))
+  }
 
   function refreshPlannerData() {
     setPlannerDataRevision((current) => current + 1)
   }
 
   useEffect(() => {
-    if (!planHydratedRef.current) {
-      planHydratedRef.current = true
+    if (skipPlanSaveRef.current) {
+      skipPlanSaveRef.current = false
       return undefined
     }
     const timer = setTimeout(() => {
-      setDailyPlan(todayStr, planText)
+      setDailyPlan(activePlanDate, planText)
     }, 400)
     return () => clearTimeout(timer)
-  }, [planText, todayStr])
+  }, [activePlanDate, planText])
 
   useEffect(() => {
     if (!builderOpen) return undefined
@@ -1288,17 +1311,53 @@ export default function DailyPlanner() {
           </section>
 
           <section className="planner-card daily-planner-section">
-            <div className="planner-card-title">日计划</div>
+            <div className="daily-section-heading">
+              <div>
+                <div className="planner-card-title">日计划</div>
+                <div className="muted daily-section-date-text">正在查看：{activePlanDateLabel}（{activePlanDate}）</div>
+              </div>
+              <div className="daily-date-toolbar" aria-label="切换日计划日期">
+                <button
+                  className="small-btn ghost daily-date-nav-btn"
+                  type="button"
+                  onClick={() => changePlanDate(addDaysToDateKey(activePlanDate, -1))}
+                  aria-label="查看前一天日计划"
+                >
+                  ←
+                </button>
+                <label className="daily-date-picker">
+                  <span>日期</span>
+                  <input
+                    type="date"
+                    value={activePlanDate}
+                    max={todayStr}
+                    onChange={(event) => changePlanDate(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="small-btn ghost daily-date-nav-btn"
+                  type="button"
+                  onClick={() => changePlanDate(addDaysToDateKey(activePlanDate, 1))}
+                  disabled={isViewingTodayPlan}
+                  aria-label="查看后一天日计划"
+                >
+                  →
+                </button>
+                {!isViewingTodayPlan ? (
+                  <button className="small-btn ghost" type="button" onClick={() => changePlanDate(todayStr)}>回到今天</button>
+                ) : null}
+              </div>
+            </div>
             <div className="planner-grid">
               <div className="planner-card planner-card-plan planner-card-inner">
-                <div className="planner-card-title">今日计划</div>
-                <label className="muted">为今天写下计划：</label>
+                <div className="planner-card-title">{isViewingTodayPlan ? '今日计划' : '这一天的计划'}</div>
+                <label className="muted">为{activePlanDateLabel}写下计划：</label>
                 <textarea
                   className="large-textarea"
-                  placeholder="写下今天的主要目标与行动"
+                  placeholder={isViewingTodayPlan ? '写下今天的主要目标与行动' : '查看或补充这一天的主要目标与行动'}
                   value={planText}
                   onChange={(e) => setPlanText(e.target.value)}
-                  onBlur={() => setDailyPlan(todayStr, planText)}
+                  onBlur={() => setDailyPlan(activePlanDate, planText)}
                 />
                 <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>提示：这里会自动保存到本机（localStorage），按日期分别保存。</div>
               </div>

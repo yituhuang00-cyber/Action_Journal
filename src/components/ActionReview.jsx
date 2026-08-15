@@ -1,19 +1,34 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getActionFeelingText } from '../lib/actionRecord'
+import { normalizeMotivationalFeelings } from '../lib/motivationalFeelings'
+import { MotivationalFeelingsEditor } from './MotivationalFeelings'
 import { updateAction } from '../storage/storage'
 
-export default function ActionReview({ action, onSave, onCancel } = {}) {
+function isoToLocalInput(iso) {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+export default function ActionReview(props = {}) {
+  return <ActionReviewForm key={props.action?.id || 'empty'} {...props} />
+}
+
+function ActionReviewForm({ action, onSave, onCancel } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const [arousal, setArousal] = useState(5)
-  const [valence, setValence] = useState(0)
-  const [startTime, setStartTime] = useState('')
-  const [endTime, setEndTime] = useState('')
-  const [content, setContent] = useState('')
-  const [feeling, setFeeling] = useState('')
-  const [celebration, setCelebration] = useState('')
-  const [nextAction, setNextAction] = useState('')
+  const [arousal, setArousal] = useState(() => action?.scores?.arousal ?? 5)
+  const [valence, setValence] = useState(() => action?.scores?.valence ?? 0)
+  const [startTime, setStartTime] = useState(() => isoToLocalInput(action?.startTime))
+  const [endTime, setEndTime] = useState(() => isoToLocalInput(action?.endTime))
+  const [content, setContent] = useState(() => action?.content || '')
+  const [feeling, setFeeling] = useState(() => getActionFeelingText(action))
+  const [celebration, setCelebration] = useState(() => action?.celebration || '')
+  const [nextAction, setNextAction] = useState(() => action?.nextAction || action?.notes || '')
+  const [motivationalFeelings, setMotivationalFeelings] = useState(() => normalizeMotivationalFeelings(action?.motivationalFeelings))
 
   function formatExpectedDuration(minutesValue) {
     const minutes = Number(minutesValue)
@@ -24,26 +39,6 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
     if (!remainingMinutes) return `${hours}小时`
     return `${hours}小时${remainingMinutes}分钟`
   }
-
-  function isoToLocalInput(iso) {
-    if (!iso) return ''
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return ''
-    const pad = (n) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  }
-
-  useEffect(() => {
-    if (!action) return
-    setArousal(action.scores?.arousal ?? 5)
-    setValence(action.scores?.valence ?? 0)
-    setStartTime(isoToLocalInput(action.startTime))
-    setEndTime(isoToLocalInput(action.endTime))
-    setContent(action.content || '')
-    setFeeling(getActionFeelingText(action))
-    setCelebration(action.celebration || '')
-    setNextAction(action.nextAction || action.notes || '')
-  }, [action])
 
   function buildPatch() {
     const parsedStart = new Date(startTime)
@@ -75,6 +70,7 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
       rant: feeling,
       bingo: '',
       celebration,
+      motivationalFeelings,
     }
   }
 
@@ -224,6 +220,8 @@ export default function ActionReview({ action, onSave, onCancel } = {}) {
           </div>
         </div>
       </div>
+
+      <MotivationalFeelingsEditor value={motivationalFeelings} onChange={setMotivationalFeelings} />
 
       <div className="review-actions">
         <button className="small-btn ghost" onClick={handleOpenWorkExperience}>工作经验</button>

@@ -1,5 +1,14 @@
-import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
-import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord'
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase.js'
+import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord.js'
+import {
+  normalizeProblemSolvingEntries,
+  normalizeProblemSolvingEntry,
+} from '../lib/problemSolving.js'
+import {
+  MOTIVATIONAL_DIMENSIONS,
+  normalizeMotivationalFeeling,
+  normalizeMotivationalFeelings,
+} from '../lib/motivationalFeelings.js'
 import {
   fetchLegacyCloudState,
   fetchNormalizedState,
@@ -7,7 +16,13 @@ import {
   persistNormalizedState,
   setSyncStatus,
   STORAGE_STATUS_EVENT,
-} from './cloudSync'
+} from './cloudSync.js'
+import {
+  createPendingSyncMeta,
+  createSyncedSyncMeta,
+  EMPTY_SYNC_META,
+  normalizeSyncMeta,
+} from './syncMeta.js'
 
 const STORAGE_KEY = 'action-journal:state'
 const STORAGE_OWNER_KEY = 'action-journal:state-owner'
@@ -18,6 +33,7 @@ export { STORAGE_STATUS_EVENT, getSyncStatus }
 
 const DEFAULT_STATE = {
   goals: {},
+  longTermTargets: {},
   actions: {},
   exerciseGoals: {},
   exerciseActions: {},
@@ -26,6 +42,8 @@ const DEFAULT_STATE = {
   weeklyPlans: {},
   dailyPlans: {},
   dailyAchievements: {},
+  dailyFlames: {},
+  flameEntries: {},
   settings: { conservativeMinutes: 60, ambitiousMinutes: 180 },
 }
 
@@ -64,49 +82,43 @@ function writeLocalOwner(userId) {
 
 function readLocalSyncMeta() {
   if (!hasBrowserStorage()) {
-    return { pending: false, lastLocalChangeAt: '', lastSuccessfulSyncAt: '' }
+    return { ...EMPTY_SYNC_META }
   }
 
   try {
     const raw = localStorage.getItem(STORAGE_SYNC_META_KEY)
     if (!raw) {
-      return { pending: false, lastLocalChangeAt: '', lastSuccessfulSyncAt: '' }
+      return { ...EMPTY_SYNC_META }
     }
 
-    const parsed = JSON.parse(raw)
-    return {
-      pending: Boolean(parsed?.pending),
-      lastLocalChangeAt: typeof parsed?.lastLocalChangeAt === 'string' ? parsed.lastLocalChangeAt : '',
-      lastSuccessfulSyncAt: typeof parsed?.lastSuccessfulSyncAt === 'string' ? parsed.lastSuccessfulSyncAt : '',
-    }
+    return normalizeSyncMeta(JSON.parse(raw))
   } catch {
-    return { pending: false, lastLocalChangeAt: '', lastSuccessfulSyncAt: '' }
+    return { ...EMPTY_SYNC_META }
   }
 }
 
-function writeLocalSyncMeta(patch) {
-  if (!hasBrowserStorage()) return { pending: false, lastLocalChangeAt: '', lastSuccessfulSyncAt: '' }
+function writeLocalSyncMeta(nextMeta) {
+  const normalized = normalizeSyncMeta(nextMeta)
+  if (!hasBrowserStorage()) return normalized
 
-  const nextMeta = { ...readLocalSyncMeta(), ...patch }
-  localStorage.setItem(STORAGE_SYNC_META_KEY, JSON.stringify(nextMeta))
-  return nextMeta
+  localStorage.setItem(STORAGE_SYNC_META_KEY, JSON.stringify(normalized))
+  return normalized
 }
 
 function markLocalStatePending() {
-  return writeLocalSyncMeta({
-    pending: true,
-    lastLocalChangeAt: new Date().toISOString(),
-  })
+  return writeLocalSyncMeta(createPendingSyncMeta(readLocalSyncMeta()))
 }
 
-function markLocalStateSynced(syncedAt = new Date().toISOString()) {
-  return writeLocalSyncMeta({
-    pending: false,
-    lastSuccessfulSyncAt: syncedAt,
-  })
+function markLocalStateSynced(syncedRevision, syncedAt = new Date().toISOString()) {
+  const result = createSyncedSyncMeta(readLocalSyncMeta(), syncedRevision, syncedAt)
+  if (result.completed) {
+    writeLocalSyncMeta(result.meta)
+  }
+  return result.completed
 }
 
 const SUB_TARGET_STATUS_SET = new Set(['want', 'doing', 'done'])
+const LONG_TERM_TARGET_CATEGORIES = new Set(['conservative', 'ambitious'])
 
 function uid(prefix = '') {
   return prefix + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9)
@@ -115,6 +127,7 @@ function uid(prefix = '') {
 function createDefaultState() {
   return {
     goals: {},
+    longTermTargets: {},
     actions: {},
     exerciseGoals: {},
     exerciseActions: {},
@@ -123,6 +136,8 @@ function createDefaultState() {
     weeklyPlans: {},
     dailyPlans: {},
     dailyAchievements: {},
+    dailyFlames: {},
+    flameEntries: {},
     settings: { conservativeMinutes: 60, ambitiousMinutes: 180 },
   }
 }
@@ -228,6 +243,73 @@ function normalizeDateOnly(value, fallback = '') {
   return parsed.toISOString().slice(0, 10)
 }
 
+const MOTIVATIONAL_DIMENSION_KEYS = new Set(MOTIVATIONAL_DIMENSIONS.map((dimension) => dimension.key))
+
+function normalizeFlameEntry(entry = {}, entryId = entry.id, previousEntry = null) {
+  const now = new Date().toISOString()
+  const dimension = MOTIVATIONAL_DIMENSION_KEYS.has(entry.dimension)
+    ? entry.dimension
+    : previousEntry?.dimension || 'autonomy'
+  const feeling = normalizeMotivationalFeeling(entry)
+  return {
+    id: entry.id || entryId || previousEntry?.id || uid('flame-'),
+    dimension,
+    content: feeling.content,
+    intensity: feeling.intensity,
+    createdAt: previousEntry?.createdAt || entry.createdAt || now,
+    updatedAt: entry.updatedAt || previousEntry?.updatedAt || now,
+  }
+}
+
+function normalizeLongTermTarget(target = {}, targetId = target.id, previousTarget = null) {
+  const now = new Date().toISOString()
+  const normalizePoints = (value, fallback = []) => Array.isArray(value)
+    ? value.filter((item) => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
+    : fallback
+  const rawPosition = Number(
+    Object.prototype.hasOwnProperty.call(target, 'position')
+      ? target.position
+      : previousTarget?.position,
+  )
+
+  return {
+    id: target.id || targetId || previousTarget?.id || uid('lt-'),
+    title: typeof target.title === 'string' ? target.title.trim() : previousTarget?.title || '',
+    reasons: normalizePoints(target.reasons, previousTarget?.reasons || []),
+    descriptions: normalizePoints(target.descriptions, previousTarget?.descriptions || []),
+    pathways: normalizePoints(target.pathways, previousTarget?.pathways || []),
+    category: LONG_TERM_TARGET_CATEGORIES.has(target.category)
+      ? target.category
+      : previousTarget?.category || 'conservative',
+    periodStart: normalizeDateOnly(target.periodStart, normalizeDateOnly(previousTarget?.periodStart, '')),
+    periodEnd: normalizeDateOnly(target.periodEnd, normalizeDateOnly(previousTarget?.periodEnd, '')),
+    position: Number.isFinite(rawPosition) && rawPosition >= 0 ? Math.floor(rawPosition) : 0,
+    createdAt: previousTarget?.createdAt || target.createdAt || now,
+    updatedAt: target.updatedAt || previousTarget?.updatedAt || now,
+  }
+}
+
+function sortLongTermTargets(targets) {
+  return [...targets].sort((left, right) => {
+    const positionDelta = Number(left.position || 0) - Number(right.position || 0)
+    if (positionDelta !== 0) return positionDelta
+    const createdAtDelta = String(left.createdAt || '').localeCompare(String(right.createdAt || ''))
+    if (createdAtDelta !== 0) return createdAtDelta
+    return String(left.id || '').localeCompare(String(right.id || ''))
+  })
+}
+
+function reindexLongTermTargetState(state) {
+  LONG_TERM_TARGET_CATEGORIES.forEach((category) => {
+    sortLongTermTargets(
+      Object.values(state.longTermTargets || {}).filter((target) => target.category === category),
+    ).forEach((target, position) => {
+      state.longTermTargets[target.id] = { ...target, position }
+    })
+  })
+  return state
+}
+
 function normalizeSubTarget(subTarget = {}, previousSubTarget = null) {
   const now = new Date().toISOString()
   const nextStatus = SUB_TARGET_STATUS_SET.has(subTarget.status)
@@ -274,6 +356,7 @@ function normalizeGoal(goal = {}, goalId = goal.id) {
     ...goal,
     id: goal.id || goalId,
     subTargets: normalizeSubTargets(goal.subTargets || []),
+    problemSolvingEntries: normalizeProblemSolvingEntries(goal.problemSolvingEntries || []),
   }
 }
 
@@ -302,6 +385,10 @@ function normalizeState(rawState = {}) {
   parsed.goals = Object.fromEntries(
     Object.entries(parsed.goals || {}).map(([id, goal]) => [id, normalizeGoal(goal, id)]),
   )
+  parsed.longTermTargets = Object.fromEntries(
+    Object.entries(parsed.longTermTargets || {}).map(([id, target]) => [id, normalizeLongTermTarget(target, id)]),
+  )
+  reindexLongTermTargetState(parsed)
   parsed.actions = Object.fromEntries(
     Object.entries(parsed.actions || {}).map(([id, action]) => [id, normalizeActionRecord(action, id)]),
   )
@@ -323,6 +410,12 @@ function normalizeState(rawState = {}) {
   parsed.settings = { ...DEFAULT_STATE.settings, ...(parsed.settings || {}) }
   parsed.dailyPlans = parsed.dailyPlans || {}
   parsed.dailyAchievements = parsed.dailyAchievements || {}
+  parsed.dailyFlames = Object.fromEntries(
+    Object.entries(parsed.dailyFlames || {}).map(([date, feelings]) => [date, normalizeMotivationalFeelings(feelings)]),
+  )
+  parsed.flameEntries = Object.fromEntries(
+    Object.entries(parsed.flameEntries || {}).map(([id, entry]) => [id, normalizeFlameEntry(entry, id)]),
+  )
   return parsed
 }
 
@@ -358,6 +451,7 @@ function countMeaningfulData(state) {
 
   return [
     'goals',
+    'longTermTargets',
     'actions',
     'exerciseGoals',
     'exerciseActions',
@@ -389,7 +483,7 @@ function writeLocalSafetyBackup(reason, state, ownerId = readLocalOwner()) {
   }
 }
 
-function persistLocalState(state, { emit = true, ownerId = currentUserId || readLocalOwner(), markPending = false, syncedAt = '' } = {}) {
+function persistLocalState(state, { emit = true, ownerId = currentUserId || readLocalOwner(), markPending = false } = {}) {
   const nextState = normalizeState(state)
   memoryState = nextState
 
@@ -401,8 +495,6 @@ function persistLocalState(state, { emit = true, ownerId = currentUserId || read
 
   if (markPending) {
     markLocalStatePending()
-  } else if (syncedAt) {
-    markLocalStateSynced(syncedAt)
   }
 
   if (emit) {
@@ -416,7 +508,56 @@ async function persistRemoteStateForUser(userId, state) {
   return persistNormalizedState(userId, state)
 }
 
-function queueRemoteWrite(state) {
+function publishSuccessfulSync(userId, syncedRevision) {
+  if (currentUserId !== userId) return false
+
+  const syncedAt = new Date().toISOString()
+  if (!markLocalStateSynced(syncedRevision, syncedAt)) {
+    setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
+    return false
+  }
+
+  setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
+  return true
+}
+
+function commitSyncedSnapshot(userId, state, syncedRevision, { emit = true } = {}) {
+  const latestMeta = readLocalSyncMeta()
+  if (currentUserId !== userId || latestMeta.localRevision > syncedRevision) {
+    if (currentUserId === userId) {
+      setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
+    }
+    return readState()
+  }
+
+  const nextState = persistLocalState(state, { emit, ownerId: userId })
+  publishSuccessfulSync(userId, syncedRevision)
+  return nextState
+}
+
+async function uploadLocalSnapshot(userId, state, syncedRevision, options) {
+  let targetRevision = syncedRevision
+  if (currentUserId === userId) {
+    writeLocalOwner(userId)
+    const currentMeta = readLocalSyncMeta()
+    if (!currentMeta.pending) {
+      targetRevision = markLocalStatePending().localRevision
+    } else {
+      targetRevision = currentMeta.localRevision
+    }
+    setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
+  }
+
+  const snapshot = cloneState(state)
+  const writePromise = remoteWriteChain
+    .catch(() => undefined)
+    .then(() => persistRemoteStateForUser(userId, snapshot))
+  remoteWriteChain = writePromise
+  await writePromise
+  return commitSyncedSnapshot(userId, state, targetRevision, options)
+}
+
+function queueRemoteWrite(state, syncedRevision = readLocalSyncMeta().localRevision) {
   const userId = currentUserId
   if (!userId) return remoteWriteChain
 
@@ -426,13 +567,14 @@ function queueRemoteWrite(state) {
     .catch(() => undefined)
     .then(() => persistRemoteStateForUser(userId, snapshot))
     .then(() => {
-      const syncedAt = new Date().toISOString()
-      markLocalStateSynced(syncedAt)
-      setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
+      publishSuccessfulSync(userId, syncedRevision)
     })
     .catch((error) => {
       console.error('同步云端数据失败', error)
-      setSyncStatus({ phase: 'error', pending: false, lastError: error.message || '同步云端数据失败' })
+      const latestMeta = readLocalSyncMeta()
+      if (currentUserId === userId && latestMeta.localRevision === syncedRevision) {
+        setSyncStatus({ phase: 'error', pending: true, lastError: error.message || '同步云端数据失败' })
+      }
     })
 
   return remoteWriteChain
@@ -454,7 +596,7 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
     return initializationPromise
   }
 
-  initializationPromise = (async () => {
+  const nextInitialization = (async () => {
     const activeSession = await getSessionFromClient(session)
 
     if (!isSupabaseConfigured() || !activeSession?.user?.id) {
@@ -476,57 +618,61 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
     currentUserId = userId
     setSyncStatus({ phase: 'loading', pending: true, lastError: '' })
 
-    const localState = readLocalState()
-    const localOwner = readLocalOwner()
-    const localSyncMeta = readLocalSyncMeta()
+    const fetchStartedAtRevision = readLocalSyncMeta().localRevision
     const normalizedRemoteState = await fetchNormalizedState(userId)
+    if (currentUserId !== userId) return readState()
 
     if (normalizedRemoteState) {
+      const localState = readLocalState()
+      const localOwner = readLocalOwner()
+      const localSyncMeta = readLocalSyncMeta()
       const localDataCount = countMeaningfulData(localState)
       const remoteDataCount = countMeaningfulData(normalizedRemoteState)
+      const localChangedWhileFetching = localSyncMeta.localRevision !== fetchStartedAtRevision
+      const hasVersionedPendingChange = localSyncMeta.pending
+        && localSyncMeta.localRevision > localSyncMeta.syncedRevision
+
+      if (
+        localOwner === userId
+        && (localSyncMeta.pending || localChangedWhileFetching)
+        && (localDataCount > 0 || remoteDataCount === 0 || hasVersionedPendingChange)
+      ) {
+        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
+      }
 
       if (remoteDataCount === 0 && localDataCount > 0 && (!localOwner || localOwner === userId)) {
-        await persistRemoteStateForUser(userId, localState)
-        const syncedAt = new Date().toISOString()
-        const nextState = persistLocalState(localState, { ownerId: userId, syncedAt })
-        setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
-        return nextState
+        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
       }
 
       if (localOwner === userId && localSyncMeta.pending) {
         if (localDataCount === 0 && remoteDataCount > 0) {
           console.warn('Skipped syncing empty local state over existing cloud data.')
-          const syncedAt = new Date().toISOString()
-          const nextState = persistLocalState(normalizedRemoteState, { ownerId: userId, syncedAt })
-          setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
-          return nextState
+          return commitSyncedSnapshot(userId, normalizedRemoteState, localSyncMeta.localRevision)
         }
 
-        await persistRemoteStateForUser(userId, localState)
-        const syncedAt = new Date().toISOString()
-        const nextState = persistLocalState(localState, { ownerId: userId, syncedAt })
-        setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
-        return nextState
+        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
       }
 
-      const syncedAt = new Date().toISOString()
       if (localDataCount > remoteDataCount) {
         writeLocalSafetyBackup('before-cloud-refresh', localState, localOwner || userId)
       }
-      const nextState = persistLocalState(normalizedRemoteState, { ownerId: userId, syncedAt })
-      setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
-      return nextState
+      return commitSyncedSnapshot(userId, normalizedRemoteState, localSyncMeta.localRevision)
     }
 
     const legacyCloudState = await fetchLegacyCloudState(userId)
+    if (currentUserId !== userId) return readState()
+    const localState = readLocalState()
+    const localOwner = readLocalOwner()
+    const localSyncMeta = readLocalSyncMeta()
+    const localChangedWhileFetching = localSyncMeta.localRevision !== fetchStartedAtRevision
 
     if (legacyCloudState) {
+      if (localOwner === userId && (localSyncMeta.pending || localChangedWhileFetching) && hasMeaningfulData(localState)) {
+        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
+      }
+
       const nextState = persistLocalState(legacyCloudState, { ownerId: userId })
-      await persistRemoteStateForUser(userId, nextState)
-      const syncedAt = new Date().toISOString()
-      persistLocalState(nextState, { emit: false, ownerId: userId, syncedAt })
-      setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
-      return nextState
+      return uploadLocalSnapshot(userId, nextState, localSyncMeta.localRevision, { emit: false })
     }
 
     const seedState = hasMeaningfulData(localState) && (!localOwner || localOwner === userId)
@@ -537,27 +683,27 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
       writeLocalSafetyBackup('before-empty-account-seed', localState, localOwner)
     }
 
-    persistLocalState(seedState, { ownerId: userId })
-    await persistRemoteStateForUser(userId, seedState)
-    const syncedAt = new Date().toISOString()
-    persistLocalState(seedState, { emit: false, ownerId: userId, syncedAt })
-    setSyncStatus({ phase: 'synced', pending: false, lastError: '', lastSyncedAt: syncedAt })
-    return memoryState
+    const nextState = persistLocalState(seedState, { ownerId: userId })
+    return uploadLocalSnapshot(userId, nextState, localSyncMeta.localRevision, { emit: false })
   })()
     .catch((error) => {
       console.error('初始化云端存储失败', error)
       memoryState = readLocalState()
-      setSyncStatus({ phase: 'error', pending: false, lastError: error.message || '初始化云端存储失败' })
+      setSyncStatus({ phase: 'error', pending: readLocalSyncMeta().pending, lastError: error.message || '初始化云端存储失败' })
       return memoryState
     })
     .finally(() => {
-      initializationPromise = null
+      if (initializationPromise === nextInitialization) {
+        initializationPromise = null
+      }
     })
 
-  return initializationPromise
+  initializationPromise = nextInitialization
+  return nextInitialization
 }
 
 export async function refreshStorageFromCloud() {
+  await remoteWriteChain.catch(() => undefined)
   return initializeStorage({ forceRefresh: true })
 }
 
@@ -569,7 +715,8 @@ export async function retryStorageSync() {
 
 function writeState(state) {
   const nextState = persistLocalState(state, { markPending: true })
-  void queueRemoteWrite(nextState)
+  const { localRevision } = readLocalSyncMeta()
+  void queueRemoteWrite(nextState, localRevision)
 }
 
 export function listGoals() {
@@ -600,6 +747,7 @@ export function createGoal(payload) {
     startDate: payload.startDate || today,
     completedDate: payload.completedDate || null,
     subTargets: normalizeSubTargets(payload.subTargets || []),
+    problemSolvingEntries: normalizeProblemSolvingEntries(payload.problemSolvingEntries || []),
     createdAt: now,
     updatedAt: now,
   }
@@ -619,6 +767,13 @@ export function updateGoal(id, patch) {
 
   if (Object.prototype.hasOwnProperty.call(nextPatch, 'subTargets')) {
     nextPatch.subTargets = normalizeSubTargets(nextPatch.subTargets, prev.subTargets || [])
+  }
+
+  if (Object.prototype.hasOwnProperty.call(nextPatch, 'problemSolvingEntries')) {
+    nextPatch.problemSolvingEntries = normalizeProblemSolvingEntries(
+      nextPatch.problemSolvingEntries,
+      prev.problemSolvingEntries || [],
+    )
   }
 
   if (Object.prototype.hasOwnProperty.call(nextPatch, 'status')) {
@@ -719,6 +874,72 @@ export function deleteSubTarget(goalId, subTargetId) {
   return true
 }
 
+export function createProblemSolvingEntry(goalId, payload = {}) {
+  const s = readState()
+  const goal = s.goals[goalId]
+  if (!goal) return null
+
+  const now = new Date().toISOString()
+  const entry = normalizeProblemSolvingEntry({
+    ...payload,
+    id: uid('ps-'),
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  s.goals[goalId] = {
+    ...goal,
+    problemSolvingEntries: [...(goal.problemSolvingEntries || []), entry],
+    updatedAt: now,
+  }
+  writeState(s)
+  return entry
+}
+
+export function updateProblemSolvingEntry(goalId, entryId, patch = {}) {
+  const s = readState()
+  const goal = s.goals[goalId]
+  if (!goal) return null
+
+  const entries = goal.problemSolvingEntries || []
+  const previousEntry = entries.find((entry) => entry.id === entryId)
+  if (!previousEntry) return null
+
+  const now = new Date().toISOString()
+  const nextEntry = normalizeProblemSolvingEntry({
+    ...previousEntry,
+    ...patch,
+    id: entryId,
+    updatedAt: now,
+  }, entryId, previousEntry)
+
+  s.goals[goalId] = {
+    ...goal,
+    problemSolvingEntries: entries.map((entry) => (entry.id === entryId ? nextEntry : entry)),
+    updatedAt: now,
+  }
+  writeState(s)
+  return nextEntry
+}
+
+export function deleteProblemSolvingEntry(goalId, entryId) {
+  const s = readState()
+  const goal = s.goals[goalId]
+  if (!goal) return false
+
+  const entries = goal.problemSolvingEntries || []
+  const nextEntries = entries.filter((entry) => entry.id !== entryId)
+  if (nextEntries.length === entries.length) return false
+
+  s.goals[goalId] = {
+    ...goal,
+    problemSolvingEntries: nextEntries,
+    updatedAt: new Date().toISOString(),
+  }
+  writeState(s)
+  return true
+}
+
 export function deleteGoal(id) {
   const s = readState()
   if (!s.goals[id]) return false
@@ -729,6 +950,117 @@ export function deleteGoal(id) {
   }
   writeState(s)
   return true
+}
+
+export function listLongTermTargets(category) {
+  const state = readState()
+  const targets = Object.values(state.longTermTargets || {})
+  const filteredTargets = LONG_TERM_TARGET_CATEGORIES.has(category)
+    ? targets.filter((target) => target.category === category)
+    : targets
+
+  return sortLongTermTargets(filteredTargets)
+}
+
+export function getLongTermTarget(id) {
+  const state = readState()
+  return state.longTermTargets?.[id] || null
+}
+
+export function createLongTermTarget(payload = {}) {
+  const state = readState()
+  const now = new Date().toISOString()
+  const category = LONG_TERM_TARGET_CATEGORIES.has(payload.category) ? payload.category : 'conservative'
+  const position = Object.values(state.longTermTargets || {})
+    .filter((target) => target.category === category)
+    .length
+  const target = normalizeLongTermTarget({
+    ...payload,
+    id: uid('lt-'),
+    title: typeof payload.title === 'string' && payload.title.trim() ? payload.title : '未命名长期目标',
+    category,
+    position,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  state.longTermTargets = state.longTermTargets || {}
+  state.longTermTargets[target.id] = target
+  reindexLongTermTargetState(state)
+  writeState(state)
+  return state.longTermTargets[target.id]
+}
+
+export function updateLongTermTarget(id, patch = {}) {
+  const state = readState()
+  const previousTarget = state.longTermTargets?.[id]
+  if (!previousTarget) return null
+
+  const now = new Date().toISOString()
+  const requestedCategory = LONG_TERM_TARGET_CATEGORIES.has(patch.category)
+    ? patch.category
+    : previousTarget.category
+  const categoryChanged = requestedCategory !== previousTarget.category
+  const destinationPosition = categoryChanged
+    ? Object.values(state.longTermTargets || {})
+        .filter((target) => target.id !== id && target.category === requestedCategory)
+        .length
+    : previousTarget.position
+
+  state.longTermTargets[id] = normalizeLongTermTarget({
+    ...previousTarget,
+    ...patch,
+    id,
+    category: requestedCategory,
+    position: destinationPosition,
+    createdAt: previousTarget.createdAt,
+    updatedAt: now,
+  }, id, previousTarget)
+  reindexLongTermTargetState(state)
+  writeState(state)
+  return state.longTermTargets[id]
+}
+
+export function deleteLongTermTarget(id) {
+  const state = readState()
+  if (!state.longTermTargets?.[id]) return false
+
+  delete state.longTermTargets[id]
+  reindexLongTermTargetState(state)
+  writeState(state)
+  return true
+}
+
+export function reorderLongTermTargets(category, orderedIds = []) {
+  if (!LONG_TERM_TARGET_CATEGORIES.has(category)) return []
+
+  const state = readState()
+  const targets = sortLongTermTargets(
+    Object.values(state.longTermTargets || {}).filter((target) => target.category === category),
+  )
+  const targetMap = new Map(targets.map((target) => [target.id, target]))
+  const uniqueIds = []
+
+  if (Array.isArray(orderedIds)) {
+    orderedIds.forEach((id) => {
+      if (targetMap.has(id) && !uniqueIds.includes(id)) uniqueIds.push(id)
+    })
+  }
+  targets.forEach((target) => {
+    if (!uniqueIds.includes(target.id)) uniqueIds.push(target.id)
+  })
+
+  const now = new Date().toISOString()
+  let changed = false
+  uniqueIds.forEach((id, position) => {
+    const target = targetMap.get(id)
+    if (target.position === position) return
+    state.longTermTargets[id] = { ...target, position, updatedAt: now }
+    changed = true
+  })
+
+  if (changed) writeState(state)
+  return uniqueIds.map((id) => state.longTermTargets[id])
 }
 
 export function listActionsByGoal(goalId) {
@@ -761,6 +1093,7 @@ export function addAction(goalId, payload) {
     rant: payload.rant || '',
     bingo: payload.bingo || '',
     celebration: payload.celebration || '',
+    motivationalFeelings: payload.motivationalFeelings,
     workExperienceTitle: payload.workExperienceTitle || '',
     workExperienceHtml: payload.workExperienceHtml || '',
     createdAt: now,
@@ -889,6 +1222,7 @@ export function addExerciseAction(goalId, payload) {
     feeling: payload.feeling || payload.bingo || '',
     bingo: payload.bingo || '',
     celebration: payload.celebration || '',
+    motivationalFeelings: payload.motivationalFeelings,
     workExperienceTitle: payload.workExperienceTitle || '',
     workExperienceHtml: payload.workExperienceHtml || '',
     createdAt: now,
@@ -1049,9 +1383,12 @@ export function importData(json, { merge = true } = {}) {
   if (!merge) {
     // ensure settings default if missing
     incoming.settings = incoming.settings || { conservativeMinutes: 60, ambitiousMinutes: 180 }
+    incoming.longTermTargets = incoming.longTermTargets || {}
     incoming.weeklyPlans = incoming.weeklyPlans || {}
     incoming.dailyPlans = incoming.dailyPlans || {}
     incoming.dailyAchievements = incoming.dailyAchievements || {}
+    incoming.dailyFlames = incoming.dailyFlames || {}
+    incoming.flameEntries = incoming.flameEntries || {}
     incoming.exerciseGoals = incoming.exerciseGoals || {}
     incoming.exerciseActions = incoming.exerciseActions || {}
     incoming.writingTemplates = incoming.writingTemplates || {}
@@ -1062,6 +1399,7 @@ export function importData(json, { merge = true } = {}) {
 
   const s = readState()
   s.goals = { ...s.goals, ...(incoming.goals || {}) }
+  s.longTermTargets = { ...(s.longTermTargets || {}), ...(incoming.longTermTargets || {}) }
   s.actions = { ...s.actions, ...(incoming.actions || {}) }
   s.exerciseGoals = { ...(s.exerciseGoals || {}), ...(incoming.exerciseGoals || {}) }
   s.exerciseActions = { ...(s.exerciseActions || {}), ...(incoming.exerciseActions || {}) }
@@ -1071,6 +1409,8 @@ export function importData(json, { merge = true } = {}) {
   s.settings = { ...s.settings, ...(incoming.settings || {}) }
   s.dailyPlans = { ...(s.dailyPlans || {}), ...(incoming.dailyPlans || {}) }
   s.dailyAchievements = { ...(s.dailyAchievements || {}), ...(incoming.dailyAchievements || {}) }
+  s.dailyFlames = { ...(s.dailyFlames || {}), ...(incoming.dailyFlames || {}) }
+  s.flameEntries = { ...(s.flameEntries || {}), ...(incoming.flameEntries || {}) }
   writeState(s)
 }
 
@@ -1121,6 +1461,73 @@ export function setDailyAchievement(dateStr, text) {
   return s.dailyAchievements[date]
 }
 
+export function getDailyFlame(dateStr) {
+  const s = readState()
+  const date = dateStr || new Date().toISOString().slice(0, 10)
+  return normalizeMotivationalFeelings(s.dailyFlames?.[date])
+}
+
+export function setDailyFlame(dateStr, feelings) {
+  const s = readState()
+  const date = dateStr || new Date().toISOString().slice(0, 10)
+  s.dailyFlames = s.dailyFlames || {}
+  s.dailyFlames[date] = normalizeMotivationalFeelings(feelings)
+  writeState(s)
+  return s.dailyFlames[date]
+}
+
+export function listDailyFlames() {
+  const s = readState()
+  return Object.entries(s.dailyFlames || {})
+    .map(([date, feelings]) => ({ date, feelings: normalizeMotivationalFeelings(feelings) }))
+    .sort((left, right) => right.date.localeCompare(left.date))
+}
+
+export function listFlameEntries() {
+  const s = readState()
+  return Object.values(s.flameEntries || {})
+    .map((entry) => normalizeFlameEntry(entry, entry.id))
+    .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
+}
+
+export function createFlameEntry(dimension, payload = {}) {
+  const s = readState()
+  const id = uid('flame-')
+  const latestCreatedAt = Object.values(s.flameEntries || {}).reduce((latest, entry) => {
+    const timestamp = new Date(entry.createdAt || 0).getTime()
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest
+  }, 0)
+  const now = new Date(Math.max(Date.now(), latestCreatedAt + 1)).toISOString()
+  const entry = normalizeFlameEntry({ ...payload, id, dimension, createdAt: now, updatedAt: now }, id)
+  s.flameEntries = s.flameEntries || {}
+  s.flameEntries[id] = entry
+  writeState(s)
+  return entry
+}
+
+export function updateFlameEntry(id, patch = {}) {
+  const s = readState()
+  const previousEntry = s.flameEntries?.[id]
+  if (!previousEntry) return null
+  const nextEntry = normalizeFlameEntry({
+    ...previousEntry,
+    ...patch,
+    id,
+    updatedAt: new Date().toISOString(),
+  }, id, previousEntry)
+  s.flameEntries[id] = nextEntry
+  writeState(s)
+  return nextEntry
+}
+
+export function deleteFlameEntry(id) {
+  const s = readState()
+  if (!s.flameEntries?.[id]) return false
+  delete s.flameEntries[id]
+  writeState(s)
+  return true
+}
+
 export function getSettings() {
   const s = readState()
   return s.settings || { conservativeMinutes: 60, ambitiousMinutes: 180 }
@@ -1148,7 +1555,16 @@ export default {
   addSubTarget,
   updateSubTarget,
   deleteSubTarget,
+  createProblemSolvingEntry,
+  updateProblemSolvingEntry,
+  deleteProblemSolvingEntry,
   deleteGoal,
+  listLongTermTargets,
+  getLongTermTarget,
+  createLongTermTarget,
+  updateLongTermTarget,
+  deleteLongTermTarget,
+  reorderLongTermTargets,
   listActionsByGoal,
   getAction,
   addAction,
@@ -1184,6 +1600,11 @@ export default {
 export function listAllActions() {
   const s = readState()
   return Object.values(s.actions || {})
+}
+
+export function listAllExerciseActions() {
+  const s = readState()
+  return Object.values(s.exerciseActions || {})
 }
 
 export function listActionsForDate(dateStr) {

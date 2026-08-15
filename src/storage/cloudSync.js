@@ -1,11 +1,12 @@
-import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase'
-import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord'
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase.js'
+import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord.js'
 
 const LEGACY_APP_STATE_TABLE = 'app_states'
 
 const TABLES = {
   userSettings: 'user_settings',
   goals: 'goals',
+  longTermTargets: 'long_term_targets',
   goalSubTargets: 'goal_sub_targets',
   actions: 'actions',
   exerciseGoals: 'exercise_goals',
@@ -17,6 +18,8 @@ const TABLES = {
   weeklyPlans: 'weekly_plans',
   dailyPlans: 'daily_plans',
   dailyAchievements: 'daily_achievements',
+  dailyFlames: 'daily_flames',
+  flameEntries: 'flame_entries',
 }
 
 export const STORAGE_STATUS_EVENT = 'action-journal:storage-status'
@@ -70,12 +73,14 @@ function hasLegacyExerciseActionRows(actions = []) {
 
 function buildNormalizedRows(userId, state) {
   const goals = Object.values(state.goals || {})
+  const longTermTargets = Object.values(state.longTermTargets || {})
   const actions = Object.values(state.actions || {})
   const exerciseGoals = Object.values(state.exerciseGoals || {})
   const exerciseActions = Object.values(state.exerciseActions || {})
   const writingTemplates = Object.values(state.writingTemplates || {})
   const writingEntries = Object.values(state.writingEntries || {})
   const weeklyPlans = Object.values(state.weeklyPlans || {})
+  const flameEntries = Object.values(state.flameEntries || {})
 
   return {
     goals: goals.map((goal) => ({
@@ -89,8 +94,23 @@ function buildNormalizedRows(userId, state) {
       status: goal.status || 'want',
       start_date: goal.startDate || '',
       completed_date: goal.completedDate || null,
+      problem_solving_entries: ensureArray(goal.problemSolvingEntries),
       created_at: goal.createdAt || new Date().toISOString(),
       updated_at: goal.updatedAt || new Date().toISOString(),
+    })),
+    longTermTargets: longTermTargets.map((target) => ({
+      id: target.id,
+      user_id: userId,
+      title: target.title || '',
+      reasons: ensureArray(target.reasons),
+      descriptions: ensureArray(target.descriptions),
+      pathways: ensureArray(target.pathways),
+      category: target.category === 'ambitious' ? 'ambitious' : 'conservative',
+      period_start: target.periodStart || '',
+      period_end: target.periodEnd || '',
+      position: Number.isFinite(Number(target.position)) ? Math.max(0, Math.floor(Number(target.position))) : 0,
+      created_at: target.createdAt || new Date().toISOString(),
+      updated_at: target.updatedAt || new Date().toISOString(),
     })),
     goalSubTargets: goals.flatMap((goal) => ensureArray(goal.subTargets).map((subTarget, index) => ({
       id: subTarget.id,
@@ -121,6 +141,7 @@ function buildNormalizedRows(userId, state) {
         rant: normalizedAction.rant || '',
         bingo: normalizedAction.bingo || '',
         celebration: normalizedAction.celebration || '',
+        motivational_feelings: ensureObject(normalizedAction.motivationalFeelings),
         work_experience_title: normalizedAction.workExperienceTitle || '',
         work_experience_html: normalizedAction.workExperienceHtml || '',
         created_at: normalizedAction.createdAt || new Date().toISOString(),
@@ -152,6 +173,7 @@ function buildNormalizedRows(userId, state) {
         scores: ensureObject(normalizedAction.scores, { arousal: 0, valence: 0 }),
         bingo: normalizedAction.feeling || normalizedAction.bingo || '',
         celebration: normalizedAction.celebration || '',
+        motivational_feelings: ensureObject(normalizedAction.motivationalFeelings),
         work_experience_title: normalizedAction.workExperienceTitle || '',
         work_experience_html: normalizedAction.workExperienceHtml || '',
         created_at: normalizedAction.createdAt || new Date().toISOString(),
@@ -211,6 +233,20 @@ function buildNormalizedRows(userId, state) {
       achievement_date: date,
       content: String(content ?? ''),
     })),
+    dailyFlames: Object.entries(state.dailyFlames || {}).map(([date, feelings]) => ({
+      user_id: userId,
+      flame_date: date,
+      feelings: ensureObject(feelings),
+    })),
+    flameEntries: flameEntries.map((entry) => ({
+      id: entry.id,
+      user_id: userId,
+      dimension: entry.dimension || 'autonomy',
+      content: entry.content || '',
+      intensity: entry.intensity ?? null,
+      created_at: entry.createdAt || new Date().toISOString(),
+      updated_at: entry.updatedAt || new Date().toISOString(),
+    })),
     userSettings: [{
       user_id: userId,
       conservative_minutes: Number(state.settings?.conservativeMinutes ?? 60),
@@ -230,6 +266,7 @@ function sortByPosition(rows) {
 function composeStateFromRows(rows) {
   const state = {
     goals: {},
+    longTermTargets: {},
     actions: {},
     exerciseGoals: {},
     exerciseActions: {},
@@ -238,6 +275,8 @@ function composeStateFromRows(rows) {
     weeklyPlans: {},
     dailyPlans: {},
     dailyAchievements: {},
+    dailyFlames: {},
+    flameEntries: {},
     settings: { conservativeMinutes: 60, ambitiousMinutes: 180 },
   }
 
@@ -253,8 +292,25 @@ function composeStateFromRows(rows) {
       startDate: goal.start_date || '',
       completedDate: goal.completed_date || null,
       subTargets: [],
+      problemSolvingEntries: ensureArray(goal.problem_solving_entries),
       createdAt: goal.created_at || new Date().toISOString(),
       updatedAt: goal.updated_at || goal.created_at || new Date().toISOString(),
+    }
+  })
+
+  sortByPosition(rows.longTermTargets).forEach((target) => {
+    state.longTermTargets[target.id] = {
+      id: target.id,
+      title: target.title || '',
+      reasons: ensureArray(target.reasons),
+      descriptions: ensureArray(target.descriptions),
+      pathways: ensureArray(target.pathways),
+      category: target.category === 'ambitious' ? 'ambitious' : 'conservative',
+      periodStart: target.period_start || '',
+      periodEnd: target.period_end || '',
+      position: Number(target.position || 0),
+      createdAt: target.created_at || new Date().toISOString(),
+      updatedAt: target.updated_at || target.created_at || new Date().toISOString(),
     }
   })
 
@@ -287,6 +343,7 @@ function composeStateFromRows(rows) {
       rant: action.rant || '',
       bingo: action.bingo || '',
       celebration: action.celebration || '',
+      motivationalFeelings: ensureObject(action.motivational_feelings),
       workExperienceTitle: action.work_experience_title || '',
       workExperienceHtml: action.work_experience_html || '',
       createdAt: action.created_at || new Date().toISOString(),
@@ -320,6 +377,7 @@ function composeStateFromRows(rows) {
       feeling: action.feeling || action.bingo || '',
       bingo: action.bingo || '',
       celebration: action.celebration || '',
+      motivationalFeelings: ensureObject(action.motivational_feelings),
       workExperienceTitle: action.work_experience_title || '',
       workExperienceHtml: action.work_experience_html || '',
       createdAt: action.created_at || new Date().toISOString(),
@@ -389,6 +447,21 @@ function composeStateFromRows(rows) {
     state.dailyAchievements[achievement.achievement_date] = String(achievement.content ?? '')
   })
 
+  rows.dailyFlames.forEach((flame) => {
+    state.dailyFlames[flame.flame_date] = ensureObject(flame.feelings)
+  })
+
+  rows.flameEntries.forEach((entry) => {
+    state.flameEntries[entry.id] = {
+      id: entry.id,
+      dimension: entry.dimension || 'autonomy',
+      content: entry.content || '',
+      intensity: entry.intensity ?? null,
+      createdAt: entry.created_at || new Date().toISOString(),
+      updatedAt: entry.updated_at || entry.created_at || new Date().toISOString(),
+    }
+  })
+
   const settingsRow = rows.userSettings[0]
   if (settingsRow) {
     state.settings = {
@@ -406,6 +479,31 @@ async function fetchTable(client, table, userId, columns = '*') {
   return data || []
 }
 
+function isMissingTableError(error, table) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = String(error?.message || '').toLowerCase()
+  return code === '42P01'
+    || code === 'PGRST205'
+    || (message.includes(String(table).toLowerCase())
+      && (message.includes('does not exist') || message.includes('could not find')))
+}
+
+function isUnavailableTableShapeError(error, table) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = String(error?.message || '').toLowerCase()
+  return isMissingTableError(error, table)
+    || (code === 'PGRST204' && message.includes(String(table).toLowerCase()))
+}
+
+async function fetchOptionalTable(client, table, userId) {
+  try {
+    return await fetchTable(client, table, userId)
+  } catch (error) {
+    if (isMissingTableError(error, table)) return []
+    throw error
+  }
+}
+
 export async function fetchNormalizedState(userId) {
   if (!userId || !isSupabaseConfigured()) return null
 
@@ -414,6 +512,7 @@ export async function fetchNormalizedState(userId) {
 
   const [
     goals,
+    longTermTargets,
     goalSubTargets,
     actions,
     exerciseGoals,
@@ -425,9 +524,12 @@ export async function fetchNormalizedState(userId) {
     weeklyPlans,
     dailyPlans,
     dailyAchievements,
+    dailyFlames,
+    flameEntries,
     userSettings,
   ] = await Promise.all([
     fetchTable(client, TABLES.goals, userId),
+    fetchOptionalTable(client, TABLES.longTermTargets, userId),
     fetchTable(client, TABLES.goalSubTargets, userId),
     fetchTable(client, TABLES.actions, userId),
     fetchTable(client, TABLES.exerciseGoals, userId),
@@ -439,11 +541,14 @@ export async function fetchNormalizedState(userId) {
     fetchTable(client, TABLES.weeklyPlans, userId),
     fetchTable(client, TABLES.dailyPlans, userId),
     fetchTable(client, TABLES.dailyAchievements, userId),
+    fetchOptionalTable(client, TABLES.dailyFlames, userId),
+    fetchOptionalTable(client, TABLES.flameEntries, userId),
     fetchTable(client, TABLES.userSettings, userId),
   ])
 
   const rows = {
     goals,
+    longTermTargets,
     goalSubTargets,
     actions,
     exerciseGoals,
@@ -455,6 +560,8 @@ export async function fetchNormalizedState(userId) {
     weeklyPlans,
     dailyPlans,
     dailyAchievements,
+    dailyFlames,
+    flameEntries,
     userSettings,
   }
 
@@ -497,6 +604,17 @@ async function upsertRows(client, table, rows, onConflict) {
   if (error) throw error
 }
 
+async function upsertRowsIfAvailable(client, table, rows, onConflict) {
+  if (!rows.length) return true
+  try {
+    await upsertRows(client, table, rows, onConflict)
+    return true
+  } catch (error) {
+    if (isUnavailableTableShapeError(error, table)) return false
+    throw error
+  }
+}
+
 const DELETE_BATCH_SIZE = 200
 
 function getRowValue(row, column) {
@@ -531,6 +649,14 @@ async function deleteStaleRows(client, table, userId, column, nextRows) {
   }
 }
 
+async function deleteStaleRowsIfAvailable(client, table, userId, column, nextRows) {
+  try {
+    await deleteStaleRows(client, table, userId, column, nextRows)
+  } catch (error) {
+    if (!isMissingTableError(error, table)) throw error
+  }
+}
+
 export async function persistNormalizedState(userId, state) {
   if (!userId || !isSupabaseConfigured()) return false
 
@@ -540,6 +666,12 @@ export async function persistNormalizedState(userId, state) {
   const rows = buildNormalizedRows(userId, state)
 
   await upsertRows(client, TABLES.goals, rows.goals, 'id')
+  const longTermTargetsPersisted = await upsertRowsIfAvailable(
+    client,
+    TABLES.longTermTargets,
+    rows.longTermTargets,
+    'id',
+  )
   await upsertRows(client, TABLES.exerciseGoals, rows.exerciseGoals, 'id')
   await upsertRows(client, TABLES.writingTemplates, rows.writingTemplates, 'id')
   await upsertRows(client, TABLES.goalSubTargets, rows.goalSubTargets, 'id')
@@ -551,6 +683,18 @@ export async function persistNormalizedState(userId, state) {
   await upsertRows(client, TABLES.weeklyPlans, rows.weeklyPlans, 'user_id,week_key')
   await upsertRows(client, TABLES.dailyPlans, rows.dailyPlans, 'user_id,plan_date')
   await upsertRows(client, TABLES.dailyAchievements, rows.dailyAchievements, 'user_id,achievement_date')
+  const dailyFlamesPersisted = await upsertRowsIfAvailable(
+    client,
+    TABLES.dailyFlames,
+    rows.dailyFlames,
+    'user_id,flame_date',
+  )
+  const flameEntriesPersisted = await upsertRowsIfAvailable(
+    client,
+    TABLES.flameEntries,
+    rows.flameEntries,
+    'id',
+  )
   await upsertRows(client, TABLES.userSettings, rows.userSettings, 'user_id')
 
   await deleteStaleRows(client, TABLES.goalSubTargets, userId, 'id', rows.goalSubTargets)
@@ -562,9 +706,22 @@ export async function persistNormalizedState(userId, state) {
   await deleteStaleRows(client, TABLES.weeklyPlans, userId, 'week_key', rows.weeklyPlans)
   await deleteStaleRows(client, TABLES.dailyPlans, userId, 'plan_date', rows.dailyPlans)
   await deleteStaleRows(client, TABLES.dailyAchievements, userId, 'achievement_date', rows.dailyAchievements)
+  await deleteStaleRowsIfAvailable(client, TABLES.dailyFlames, userId, 'flame_date', rows.dailyFlames)
+  await deleteStaleRowsIfAvailable(client, TABLES.flameEntries, userId, 'id', rows.flameEntries)
+  await deleteStaleRowsIfAvailable(client, TABLES.longTermTargets, userId, 'id', rows.longTermTargets)
   await deleteStaleRows(client, TABLES.goals, userId, 'id', rows.goals)
   await deleteStaleRows(client, TABLES.exerciseGoals, userId, 'id', rows.exerciseGoals)
   await deleteStaleRows(client, TABLES.writingTemplates, userId, 'id', rows.writingTemplates)
+
+  if (!longTermTargetsPersisted) {
+    throw new Error('云端长期目标表结构尚未升级，请先执行最新的 supabase/schema.sql 后重试同步。')
+  }
+  if (!dailyFlamesPersisted) {
+    throw new Error('云端火苗表结构尚未升级，请先执行最新的 supabase/schema.sql 后重试同步。')
+  }
+  if (!flameEntriesPersisted) {
+    throw new Error('云端火苗记录表结构尚未升级，请先执行最新的 supabase/schema.sql 后重试同步。')
+  }
 
   return true
 }

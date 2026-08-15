@@ -1,239 +1,346 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { listAllActions, getDailyAchievement, getGoal, getAction, setDailyAchievement, STORAGE_SYNC_EVENT } from '../storage/storage'
-import ActionReview from '../components/ActionReview'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import {
+  MOTIVATIONAL_DIMENSIONS,
+  countMotivationalFeelings,
+  hasMotivationalFeeling,
+  normalizeMotivationalFeeling,
+  normalizeMotivationalFeelings,
+} from '../lib/motivationalFeelings'
+import { MotivationalFeelingFields } from '../components/MotivationalFeelings'
+import {
+  STORAGE_SYNC_EVENT,
+  createFlameEntry,
+  deleteFlameEntry,
+  getAction,
+  getDailyFlame,
+  getExerciseAction,
+  listAllActions,
+  listAllExerciseActions,
+  listDailyFlames,
+  listFlameEntries,
+  setDailyFlame,
+  updateAction,
+  updateExerciseAction,
+  updateFlameEntry,
+} from '../storage/storage'
 
-function getTodayKey() {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60 * 1000)
-  return local.toISOString().slice(0, 10)
+function formatRecordedAt(value, fallback = '') {
+  if (!value) return fallback || '未记录时间'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return fallback || value
+  return date.toLocaleString([], {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
-function isoToLocalDateKey(iso) {
-  if (!iso) return ''
-  const date = new Date(iso)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000)
-  return local.toISOString().slice(0, 10)
+function buildFeelingItems() {
+  const regularActions = listAllActions().map((action) => ({
+    key: `action:${action.id}`,
+    kind: 'action',
+    recordId: action.id,
+    occurredAt: action.endTime || action.startTime || action.createdAt || '',
+    detailPath: `/goal/${action.goalId}`,
+    feelings: normalizeMotivationalFeelings(action.motivationalFeelings),
+  }))
+  const exerciseActions = listAllExerciseActions().map((action) => ({
+    key: `exercise:${action.id}`,
+    kind: 'exercise',
+    recordId: action.id,
+    occurredAt: action.endTime || action.startTime || action.createdAt || '',
+    detailPath: `/exercise/${action.goalId}`,
+    feelings: normalizeMotivationalFeelings(action.motivationalFeelings),
+  }))
+  const legacyDailyEntries = listDailyFlames().map((entry) => ({
+    key: `daily:${entry.date}`,
+    kind: 'daily',
+    recordId: entry.date,
+    occurredAt: `${entry.date}T12:00:00`,
+    displayDate: entry.date,
+    detailPath: '',
+    feelings: entry.feelings,
+  }))
+  const manualEntries = listFlameEntries().map((entry) => ({
+    key: `manual:${entry.id}`,
+    kind: 'manual',
+    recordId: entry.id,
+    occurredAt: entry.createdAt,
+    detailPath: '',
+    feelings: normalizeMotivationalFeelings({
+      [entry.dimension]: { content: entry.content, intensity: entry.intensity },
+    }),
+  }))
+
+  return regularActions
+    .concat(exerciseActions, legacyDailyEntries, manualEntries)
+    .filter((item) => countMotivationalFeelings(item.feelings) > 0)
+    .sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt)))
 }
 
-function buildTodayActions(todayKey) {
-  return listAllActions()
-    .filter((action) => !!action.endTime && isoToLocalDateKey(action.endTime) === todayKey)
-    .sort((left, right) => (right.endTime || '').localeCompare(left.endTime || ''))
+function sortFeelingItems(items, dimensionKey, sortMode) {
+  return [...items].sort((left, right) => {
+    if (sortMode === 'recent') return String(right.occurredAt).localeCompare(String(left.occurredAt))
+
+    const leftScore = left.feelings[dimensionKey]?.intensity
+    const rightScore = right.feelings[dimensionKey]?.intensity
+    const leftMissing = leftScore === null || leftScore === undefined
+    const rightMissing = rightScore === null || rightScore === undefined
+    if (leftMissing !== rightMissing) return leftMissing ? 1 : -1
+    const normalizedLeft = leftMissing ? 0 : Number(leftScore)
+    const normalizedRight = rightMissing ? 0 : Number(rightScore)
+    const delta = sortMode === 'intensity-asc'
+      ? normalizedLeft - normalizedRight
+      : normalizedRight - normalizedLeft
+    if (delta !== 0) return delta
+    return String(right.occurredAt).localeCompare(String(left.occurredAt))
+  })
 }
 
 export default function DailyAchievements() {
-  const [todayKey] = useState(() => getTodayKey())
-  const [todayActions, setTodayActions] = useState(() => buildTodayActions(getTodayKey()))
-  const [selectedForReview, setSelectedForReview] = useState(null)
-  const [achievementText, setAchievementText] = useState(() => getDailyAchievement(getTodayKey()))
-  const achievementHydratedRef = useRef(false)
+  const [drafts, setDrafts] = useState(() => normalizeMotivationalFeelings())
+  const [feelingItems, setFeelingItems] = useState(() => buildFeelingItems())
+  const [sortMode, setSortMode] = useState('intensity-desc')
+  const [editingKey, setEditingKey] = useState('')
+  const [editingValue, setEditingValue] = useState(() => normalizeMotivationalFeeling())
 
-  useEffect(() => {
-    achievementHydratedRef.current = true
+  const refreshItems = useCallback(() => {
+    setFeelingItems(buildFeelingItems())
   }, [])
 
-  useEffect(() => {
-    if (!achievementHydratedRef.current) return
-    const t = setTimeout(() => {
-      setDailyAchievement(todayKey, achievementText)
-    }, 400)
-    return () => clearTimeout(t)
-  }, [achievementText, todayKey])
-
-  function timeText(iso) {
-    if (!iso) return ''
-    try {
-      return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    } catch {
-      return ''
-    }
+  function updateDraft(key, value) {
+    setDrafts((current) => normalizeMotivationalFeelings({ ...current, [key]: value }))
   }
 
-  function durationMinutes(a) {
-    if (!a?.startTime || !a?.endTime) return 0
-    const start = new Date(a.startTime).getTime()
-    const end = new Date(a.endTime).getTime()
-    const mins = Math.round((end - start) / 60000)
-    return Number.isFinite(mins) && mins > 0 ? mins : 0
+  function handleCreate(dimension) {
+    const draft = normalizeMotivationalFeeling(drafts[dimension.key])
+    if (!hasMotivationalFeeling(draft)) {
+      window.alert('请先填写具体事件与感受，或选择一个强度。')
+      return
+    }
+    createFlameEntry(dimension.key, draft)
+    setDrafts((current) => normalizeMotivationalFeelings({
+      ...current,
+      [dimension.key]: normalizeMotivationalFeeling(),
+    }))
+    refreshItems()
   }
 
-  useEffect(() => {
-    function refreshTodayActions() {
-      setTodayActions(buildTodayActions(todayKey))
+  function startEditing(item, dimensionKey) {
+    setEditingKey(`${dimensionKey}:${item.key}`)
+    setEditingValue(normalizeMotivationalFeeling(item.feelings[dimensionKey]))
+  }
+
+  function clearDimensionInAction(item, dimensionKey) {
+    const emptyFeeling = normalizeMotivationalFeeling()
+    if (item.kind === 'action') {
+      const action = getAction(item.recordId)
+      if (!action) return false
+      return Boolean(updateAction(action.id, {
+        motivationalFeelings: normalizeMotivationalFeelings({
+          ...action.motivationalFeelings,
+          [dimensionKey]: emptyFeeling,
+        }),
+      }))
+    }
+    if (item.kind === 'exercise') {
+      const action = getExerciseAction(item.recordId)
+      if (!action) return false
+      return Boolean(updateExerciseAction(action.id, {
+        motivationalFeelings: normalizeMotivationalFeelings({
+          ...action.motivationalFeelings,
+          [dimensionKey]: emptyFeeling,
+        }),
+      }))
+    }
+    if (item.kind === 'daily') {
+      const feelings = getDailyFlame(item.recordId)
+      setDailyFlame(item.recordId, normalizeMotivationalFeelings({ ...feelings, [dimensionKey]: emptyFeeling }))
+      return true
+    }
+    return deleteFlameEntry(item.recordId)
+  }
+
+  function saveEditedItem(item, dimensionKey) {
+    const nextFeeling = normalizeMotivationalFeeling(editingValue)
+    if (!hasMotivationalFeeling(nextFeeling)) {
+      window.alert('记录不能为空；如果不再需要，请使用删除。')
+      return
     }
 
-    const id = setInterval(refreshTodayActions, 15 * 1000)
-    function onStorage() { refreshTodayActions() }
-    window.addEventListener('storage', onStorage)
-    window.addEventListener(STORAGE_SYNC_EVENT, onStorage)
-    return () => {
-      clearInterval(id)
-      window.removeEventListener('storage', onStorage)
-      window.removeEventListener(STORAGE_SYNC_EVENT, onStorage)
-    }
-  }, [todayKey])
-
-  const grouped = useMemo(() => {
-    const map = new Map()
-    for (const a of todayActions) {
-      const goal = getGoal(a.goalId)
-      const goalId = a.goalId || 'none'
-      if (!map.has(goalId)) {
-        map.set(goalId, {
-          goalId,
-          goalTitle: goal?.title || '无目标',
-          actions: [],
-          minutes: 0,
+    let saved = null
+    if (item.kind === 'manual') {
+      saved = updateFlameEntry(item.recordId, nextFeeling)
+    } else if (item.kind === 'action') {
+      const action = getAction(item.recordId)
+      if (action) {
+        saved = updateAction(action.id, {
+          motivationalFeelings: normalizeMotivationalFeelings({
+            ...action.motivationalFeelings,
+            [dimensionKey]: nextFeeling,
+          }),
         })
       }
-      const g = map.get(goalId)
-      g.actions.push(a)
-      g.minutes += durationMinutes(a)
+    } else if (item.kind === 'exercise') {
+      const action = getExerciseAction(item.recordId)
+      if (action) {
+        saved = updateExerciseAction(action.id, {
+          motivationalFeelings: normalizeMotivationalFeelings({
+            ...action.motivationalFeelings,
+            [dimensionKey]: nextFeeling,
+          }),
+        })
+      }
+    } else if (item.kind === 'daily') {
+      const feelings = getDailyFlame(item.recordId)
+      saved = setDailyFlame(item.recordId, normalizeMotivationalFeelings({
+        ...feelings,
+        [dimensionKey]: nextFeeling,
+      }))
     }
 
-    const list = Array.from(map.values())
-    list.sort((a, b) => {
-      if (b.minutes !== a.minutes) return b.minutes - a.minutes
-      return a.goalTitle.localeCompare(b.goalTitle)
-    })
-    return list
-  }, [todayActions])
-
-  const summary = useMemo(() => {
-    const totalMinutes = todayActions.reduce((sum, a) => sum + durationMinutes(a), 0)
-    const goalCount = new Set(todayActions.map((a) => a.goalId || 'none')).size
-    return {
-      count: todayActions.length,
-      minutes: totalMinutes,
-      goalCount,
+    if (!saved) {
+      window.alert('保存失败，请稍后再试。')
+      return
     }
-  }, [todayActions])
+    setEditingKey('')
+    setEditingValue(normalizeMotivationalFeeling())
+    refreshItems()
+  }
+
+  function handleDelete(item, dimensionKey) {
+    if (!window.confirm('确定删除这条火苗记录吗？')) return
+    if (!clearDimensionInAction(item, dimensionKey)) {
+      window.alert('删除失败，请稍后再试。')
+      return
+    }
+    if (editingKey === `${dimensionKey}:${item.key}`) setEditingKey('')
+    refreshItems()
+  }
+
+  useEffect(() => {
+    const interval = window.setInterval(refreshItems, 15 * 1000)
+    window.addEventListener('storage', refreshItems)
+    window.addEventListener(STORAGE_SYNC_EVENT, refreshItems)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('storage', refreshItems)
+      window.removeEventListener(STORAGE_SYNC_EVENT, refreshItems)
+    }
+  }, [refreshItems])
+
+  const summary = useMemo(() => ({
+    records: feelingItems.length,
+    flames: feelingItems.reduce((count, item) => count + countMotivationalFeelings(item.feelings), 0),
+  }), [feelingItems])
 
   return (
-    <div className="page daily-achievements-page">
-      <div className="page-shell achievements-shell">
-        <div className="page-header">
+    <div className="page daily-achievements-page flame-page">
+      <div className="page-shell achievements-shell flame-shell">
+        <div className="page-header flame-page-header">
           <div>
-            <h2 className="page-title">日成就</h2>
-            <div className="page-subtitle">今天（{todayKey}）的完成与感受</div>
+            <div className="page-eyebrow">让内在动力保持燃烧</div>
+            <h2 className="page-title">火苗</h2>
           </div>
-
-          <div className="achievements-stats">
-            <div className="ach-stat">
-              <div className="ach-stat-label">完成行动</div>
-              <div className="ach-stat-value">{summary.count}</div>
-            </div>
-            <div className="ach-stat">
-              <div className="ach-stat-label">累计分钟</div>
-              <div className="ach-stat-value">{summary.minutes}</div>
-            </div>
-            <div className="ach-stat">
-              <div className="ach-stat-label">涉及目标</div>
-              <div className="ach-stat-value">{summary.goalCount}</div>
-            </div>
+          <div className="achievements-stats flame-stats">
+            <div className="ach-stat"><div className="ach-stat-label">记录</div><div className="ach-stat-value">{summary.records}</div></div>
+            <div className="ach-stat"><div className="ach-stat-label">火苗</div><div className="ach-stat-value">{summary.flames}</div></div>
           </div>
         </div>
 
-        <div className="achievements-grid">
-          <div className="ach-card">
-            <div className="ach-card-title">今天的成就</div>
-            <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>写下你完成了什么、哪里做得好、以及此刻的感受。</div>
-            <textarea
-              className="large-textarea"
-              placeholder="写下今天你完成了什么，以及你的感受"
-              value={achievementText}
-              onChange={(e) => setAchievementText(e.target.value)}
-              onBlur={() => setDailyAchievement(todayKey, achievementText)}
-            />
-            <div className="muted" style={{ marginTop: 6, fontSize: 12 }}></div>
-          </div>
+        <div className="flame-toolbar card-surface">
+          <label className="flame-sort-control">
+            <span>记录排序</span>
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+              <option value="intensity-desc">强度：从高到低</option>
+              <option value="intensity-asc">强度：从低到高</option>
+              <option value="recent">时间：最近优先</option>
+            </select>
+          </label>
+        </div>
 
-          <div className="ach-card">
-            <div className="ach-card-title">今天完成的行动</div>
-            {grouped.length ? (
-              <div className="ach-groups">
-                {grouped.map((g) => (
-                  <div key={g.goalId} className="ach-group">
-                    <div className="ach-group-header">
-                      <div className="ach-group-title">{g.goalTitle}</div>
-                      <div className="ach-group-meta muted">{g.actions.length} 条 · {g.minutes} 分钟</div>
-                    </div>
-                    <div className="ach-action-list">
-                      {g.actions.map((a) => {
-                        const mins = durationMinutes(a)
-                        const arousal = a.scores?.arousal ?? 0
-                        const valence = a.scores?.valence ?? 0
-                        const valenceClass = valence > 0 ? 'pos' : valence < 0 ? 'neg' : 'neu'
-                        return (
-                          <div key={a.id} className="ach-action-row">
-                            <div className="ach-action-main">
-                              <div className="ach-action-time">
-                                {timeText(a.startTime)}{a.startTime && a.endTime ? ' – ' : ''}{timeText(a.endTime)}
-                                {mins ? <span className="ach-dot">·</span> : null}
-                                {mins ? <span>{mins} 分钟</span> : null}
-                              </div>
-                              <div className="ach-action-content">
-                                {a.content || a.nextAction || a.notes || '（未填写内容）'}
-                              </div>
-                              {a.content && (a.nextAction || a.notes) ? (
-                                <div className="ach-action-notes muted">下一步行动：{a.nextAction || a.notes}</div>
-                              ) : null}
-                            </div>
+        <div className="flame-dimension-list">
+          {MOTIVATIONAL_DIMENSIONS.map((dimension) => {
+            const dimensionItems = sortFeelingItems(
+              feelingItems.filter((item) => hasMotivationalFeeling(item.feelings[dimension.key])),
+              dimension.key,
+              sortMode,
+            )
+            return (
+              <section className={`flame-dimension-board flame-${dimension.key}`} key={dimension.key}>
+                <div className="flame-dimension-header">
+                  <div className="flame-dimension-icon" aria-hidden="true">{dimension.icon}</div>
+                  <div>
+                    <h3>{dimension.label}</h3>
+                    <p>{dimension.question}</p>
+                  </div>
+                  <span className="flame-count-chip">{dimensionItems.length} 条记录</span>
+                </div>
 
-                            <div className="ach-action-meta">
-                              <span className="ach-badge">唤醒 {arousal}</span>
-                              <span className={`ach-badge ${valenceClass}`}>效价 {valence}</span>
-                              <button
-                                className="small-btn ghost"
-                                onClick={() => {
-                                  const fresh = getAction(a.id)
-                                  setSelectedForReview(fresh)
-                                }}
-                              >
-                                回顾
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
+                <div className="flame-board-grid">
+                  <div className="flame-daily-entry">
+                    <div className="flame-entry-kicker">记录此刻的感受</div>
+                    <MotivationalFeelingFields
+                      dimension={dimension}
+                      value={drafts[dimension.key]}
+                      onChange={(value) => updateDraft(dimension.key, value)}
+                    />
+                    <div className="flame-create-actions">
+                      <button type="button" className="btn-primary" onClick={() => handleCreate(dimension)}>保存记录</button>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="ach-empty">
-                <div style={{ fontWeight: 700 }}>今天还没有完成的行动</div>
-                <div className="muted" style={{ marginTop: 6, fontSize: 13 }}>去“行动”页开始一次计时，结束后会自动出现在这里。</div>
-              </div>
-            )}
-          </div>
+
+                  <div className="flame-action-column">
+                    <div className="flame-entry-kicker">全部记录</div>
+                    {dimensionItems.length ? (
+                      <div className="flame-action-list">
+                        {dimensionItems.map((item) => {
+                          const feeling = item.feelings[dimension.key]
+                          const itemEditKey = `${dimension.key}:${item.key}`
+                          const isEditing = editingKey === itemEditKey
+                          return (
+                            <article className={`flame-action-card${isEditing ? ' is-editing' : ''}`} key={itemEditKey}>
+                              {isEditing ? (
+                                <>
+                                  <MotivationalFeelingFields dimension={dimension} value={editingValue} onChange={setEditingValue} />
+                                  <div className="flame-record-actions">
+                                    <button type="button" className="small-btn ghost" onClick={() => setEditingKey('')}>取消</button>
+                                    <button type="button" className="btn-primary" onClick={() => saveEditedItem(item, dimension.key)}>保存修改</button>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flame-action-card-head">
+                                    <span>{formatRecordedAt(item.occurredAt, item.displayDate)}</span>
+                                    {feeling.intensity !== null && <span className="flame-intensity-badge">{feeling.intensity}/10</span>}
+                                  </div>
+                                  {feeling.content.trim() && <div className="flame-action-copy">{feeling.content.trim()}</div>}
+                                  <div className="flame-action-footer">
+                                    <div className="flame-record-actions">
+                                      {item.detailPath && <Link className="small-btn ghost" to={item.detailPath}>查看详情</Link>}
+                                      <button type="button" className="small-btn ghost" onClick={() => startEditing(item, dimension.key)}>编辑</button>
+                                      <button type="button" className="small-btn danger" onClick={() => handleDelete(item, dimension.key)}>删除</button>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </article>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flame-empty-state">还没有{dimension.label}记录。</div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )
+          })}
         </div>
       </div>
-
-      {selectedForReview && (
-        <div className="modal-overlay" onMouseDown={() => setSelectedForReview(null)}>
-          <div className="modal-content" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div>
-                <div className="modal-title">行动回顾</div>
-                <div className="muted" style={{ marginTop: 4, fontSize: 13 }}>
-                  {getGoal(selectedForReview.goalId)?.title || '无目标'} · {timeText(selectedForReview.startTime)} – {timeText(selectedForReview.endTime)}
-                </div>
-              </div>
-              <button className="small-btn ghost" onClick={() => setSelectedForReview(null)}>关闭</button>
-            </div>
-
-            <ActionReview
-              action={selectedForReview}
-              onCancel={() => setSelectedForReview(null)}
-              onSave={() => {
-                setSelectedForReview(null)
-                setTodayActions(buildTodayActions(todayKey))
-              }}
-            />
-          </div>
-        </div>
-      )}
     </div>
   )
 }
