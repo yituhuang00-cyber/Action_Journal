@@ -21,9 +21,13 @@ $$;
 create table if not exists public.app_states (
   user_id uuid primary key references auth.users (id) on delete cascade,
   state jsonb not null default '{}'::jsonb,
+  sync_revision bigint not null default 0,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.app_states
+  add column if not exists sync_revision bigint not null default 0;
 
 create table if not exists public.goals (
   id text primary key,
@@ -290,6 +294,71 @@ drop policy if exists "app_states_update_own" on public.app_states;
 create policy "app_states_update_own" on public.app_states for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 drop policy if exists "app_states_delete_own" on public.app_states;
 create policy "app_states_delete_own" on public.app_states for delete to authenticated using (auth.uid() = user_id);
+
+create or replace function public.save_app_state_if_revision(
+  p_expected_revision bigint,
+  p_state jsonb
+)
+returns table (
+  saved boolean,
+  revision bigint,
+  cloud_updated_at timestamptz
+)
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+begin
+  if current_user_id is null then
+    raise exception 'Authentication is required.';
+  end if;
+
+  update public.app_states as current_state
+  set
+    state = coalesce(p_state, '{}'::jsonb),
+    sync_revision = current_state.sync_revision + 1
+  where current_state.user_id = current_user_id
+    and current_state.sync_revision = greatest(coalesce(p_expected_revision, 0), 0)
+  returning true, current_state.sync_revision, current_state.updated_at
+  into saved, revision, cloud_updated_at;
+
+  if found then
+    return next;
+    return;
+  end if;
+
+  if greatest(coalesce(p_expected_revision, 0), 0) = 0 then
+    insert into public.app_states (user_id, state, sync_revision)
+    values (current_user_id, coalesce(p_state, '{}'::jsonb), 1)
+    on conflict (user_id) do nothing
+    returning true, app_states.sync_revision, app_states.updated_at
+    into saved, revision, cloud_updated_at;
+
+    if found then
+      return next;
+      return;
+    end if;
+  end if;
+
+  select false, current_state.sync_revision, current_state.updated_at
+  into saved, revision, cloud_updated_at
+  from public.app_states as current_state
+  where current_state.user_id = current_user_id;
+
+  if not found then
+    saved := false;
+    revision := 0;
+    cloud_updated_at := null;
+  end if;
+
+  return next;
+end;
+$$;
+
+revoke all on function public.save_app_state_if_revision(bigint, jsonb) from public;
+grant execute on function public.save_app_state_if_revision(bigint, jsonb) to authenticated;
 
 drop policy if exists "goals_select_own" on public.goals;
 create policy "goals_select_own" on public.goals for select to authenticated using (auth.uid() = user_id);

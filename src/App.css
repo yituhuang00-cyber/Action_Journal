@@ -56,7 +56,8 @@
   background: #ecfdf5;
   color: #047857;
 }
-.sync-status-error {
+.sync-status-error,
+.sync-status-conflict {
   background: #fef2f2;
   color: #b91c1c;
 }
@@ -2428,7 +2429,8 @@ body,
   background: #effaf4 !important;
 }
 
-.sync-status-error {
+.sync-status-error,
+.sync-status-conflict {
   color: #b42318 !important;
   border-color: #fecdca !important;
   background: #fff7f7 !important;
@@ -3728,7 +3730,8 @@ body {
   background: #f0fdf4 !important;
 }
 
-.sync-status-error {
+.sync-status-error,
+.sync-status-conflict {
   color: #b42318 !important;
   border-color: #fecaca !important;
   background: #fff7f7 !important;
@@ -5642,7 +5645,8 @@ body::after,
   color: var(--success);
 }
 
-.sync-status-error {
+.sync-status-error,
+.sync-status-conflict {
   border-color: #fecaca;
   background: var(--danger-soft);
   color: var(--danger);

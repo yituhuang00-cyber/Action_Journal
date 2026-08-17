@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getExerciseFeelingText } from '../lib/actionRecord'
 import { normalizeMotivationalFeelings } from '../lib/motivationalFeelings'
 import { MotivationalFeelingsEditor } from './MotivationalFeelings'
 import { updateExerciseAction } from '../storage/storage'
+import { clearReviewDraft, loadReviewDraft, saveReviewDraft } from '../lib/reviewDraft'
 
 function isoToLocalInput(iso) {
   if (!iso) return ''
@@ -14,7 +15,7 @@ function isoToLocalInput(iso) {
 }
 
 function createDraft(action) {
-  return {
+  const fallback = {
     arousal: action?.scores?.arousal ?? 5,
     valence: action?.scores?.valence ?? 0,
     startTime: isoToLocalInput(action?.startTime),
@@ -23,6 +24,12 @@ function createDraft(action) {
     feeling: getExerciseFeelingText(action),
     celebration: action?.celebration || '',
     motivationalFeelings: normalizeMotivationalFeelings(action?.motivationalFeelings),
+  }
+
+  const restored = loadReviewDraft('exercise', action, fallback)
+  return {
+    ...restored,
+    motivationalFeelings: normalizeMotivationalFeelings(restored.motivationalFeelings),
   }
 }
 
@@ -34,6 +41,10 @@ function ExerciseReviewForm({ action, exerciseTitle = '', onSave, onCancel } = {
   const navigate = useNavigate()
   const [draft, setDraft] = useState(() => createDraft(action))
   const selectedExerciseLabel = exerciseTitle || action?.exerciseName || '当前运动'
+
+  useEffect(() => {
+    saveReviewDraft('exercise', action, draft)
+  }, [action, draft])
 
   function buildPatch() {
     const parsedStart = new Date(draft.startTime)
@@ -78,6 +89,8 @@ function ExerciseReviewForm({ action, exerciseTitle = '', onSave, onCancel } = {
     const patch = buildPatch()
     if (!patch) return
     const updated = updateExerciseAction(action.id, patch)
+    if (!updated) return
+    clearReviewDraft('exercise', action.id)
     if (onSave) onSave(updated)
   }
 
@@ -90,7 +103,9 @@ function ExerciseReviewForm({ action, exerciseTitle = '', onSave, onCancel } = {
 
     const patch = buildPatch()
     if (!patch) return
-    updateExerciseAction(action.id, patch)
+    const updated = updateExerciseAction(action.id, patch)
+    if (!updated) return
+    clearReviewDraft('exercise', action.id)
     navigate(`/exercise-goals/${action.goalId}/actions/${action.id}/work-experience`, {
       state: {
         returnTo: `/exercise/${action.goalId}?reviewAction=${action.id}`,

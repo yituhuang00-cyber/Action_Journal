@@ -198,6 +198,7 @@ function AppContent({ reminders, syncStatus, session, signOut, localMode, syncAv
       if (!syncStatus.lastSyncedAt) return '云端已连接'
       return `已同步 ${new Date(syncStatus.lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     }
+    if (syncStatus.phase === 'conflict') return '已采用云端较新版本'
     if (syncStatus.phase === 'error') return '同步暂时不可用'
     if (syncStatus.phase === 'signed-out') return '请登录后同步'
     if (syncStatus.phase === 'not-configured') return '本机保存中'
@@ -265,7 +266,10 @@ function AppContent({ reminders, syncStatus, session, signOut, localMode, syncAv
               <div className="sync-caption">{formatBackupStatus()}</div>
             </div>
             <div className="header-actions">
-              <div className={`sync-status sync-status-${localMode ? 'signed-out' : syncStatus.phase || 'idle'}`}>
+              <div
+                className={`sync-status sync-status-${localMode ? 'signed-out' : syncStatus.phase || 'idle'}`}
+                title={!localMode && syncStatus.lastError ? syncStatus.lastError : undefined}
+              >
                 <span>{renderSyncStatus(localMode)}</span>
                 {!localMode && syncStatus.phase === 'error' ? (
                   <button type="button" className="sync-retry-btn" onClick={() => { void retryStorageSync() }}>

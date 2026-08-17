@@ -50,6 +50,7 @@ export default function AuthGate({ children }) {
   const [localMode, setLocalMode] = useState(false)
   const [status, setStatus] = useState({ loading: true, submitting: false, error: '', message: '' })
   const hadSessionRef = useRef(false)
+  const sessionUserIdRef = useRef(null)
   const explicitSignOutRef = useRef(false)
   const onlineRef = useRef(online)
 
@@ -128,6 +129,7 @@ export default function AuthGate({ children }) {
 
       const nextSession = data.session ?? null
       hadSessionRef.current = Boolean(nextSession)
+      sessionUserIdRef.current = nextSession?.user?.id || null
       setSession(nextSession)
       if (nextSession && !onlineRef.current) {
         setLocalMode(true)
@@ -144,7 +146,18 @@ export default function AuthGate({ children }) {
     void loadSession()
 
     const { data: authListener } = client.auth.onAuthStateChange((_event, nextSession) => {
+      const nextUserId = nextSession?.user?.id || null
+      const isSameAuthenticatedUser = Boolean(nextUserId && nextUserId === sessionUserIdRef.current && hadSessionRef.current)
+
       setSession(nextSession)
+
+      if (isSameAuthenticatedUser) {
+        explicitSignOutRef.current = false
+        setLocalMode(!onlineRef.current)
+        return
+      }
+
+      sessionUserIdRef.current = nextUserId
       setStatus((prev) => ({ ...prev, loading: true, error: '' }))
 
       if (nextSession) {
@@ -154,6 +167,7 @@ export default function AuthGate({ children }) {
       } else {
         const shouldUseLocalMode = !explicitSignOutRef.current && (!onlineRef.current || hadSessionRef.current || hasStoredStateSnapshot())
         hadSessionRef.current = false
+        sessionUserIdRef.current = null
         setLocalMode(shouldUseLocalMode)
       }
 

@@ -94,8 +94,7 @@ export default function ExerciseDetail() {
   }, [id])
 
   function handleReviewSaved() {
-    setCurrentActionForReview(null)
-    setReviewModalOpen(false)
+    closeReviewModal()
     load()
   }
 

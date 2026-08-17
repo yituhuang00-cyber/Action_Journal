@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { getActionFeelingText } from '../lib/actionRecord'
 import { normalizeMotivationalFeelings } from '../lib/motivationalFeelings'
 import { MotivationalFeelingsEditor } from './MotivationalFeelings'
 import { updateAction } from '../storage/storage'
+import { clearReviewDraft, loadReviewDraft, saveReviewDraft } from '../lib/reviewDraft'
 
 function isoToLocalInput(iso) {
   if (!iso) return ''
@@ -17,18 +18,34 @@ export default function ActionReview(props = {}) {
   return <ActionReviewForm key={props.action?.id || 'empty'} {...props} />
 }
 
+function createDraft(action) {
+  const fallback = {
+    arousal: action?.scores?.arousal ?? 5,
+    valence: action?.scores?.valence ?? 0,
+    startTime: isoToLocalInput(action?.startTime),
+    endTime: isoToLocalInput(action?.endTime),
+    content: action?.content || '',
+    feeling: getActionFeelingText(action),
+    celebration: action?.celebration || '',
+    nextAction: action?.nextAction || action?.notes || '',
+    motivationalFeelings: normalizeMotivationalFeelings(action?.motivationalFeelings),
+  }
+
+  const restored = loadReviewDraft('action', action, fallback)
+  return {
+    ...restored,
+    motivationalFeelings: normalizeMotivationalFeelings(restored.motivationalFeelings),
+  }
+}
+
 function ActionReviewForm({ action, onSave, onCancel } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const [arousal, setArousal] = useState(() => action?.scores?.arousal ?? 5)
-  const [valence, setValence] = useState(() => action?.scores?.valence ?? 0)
-  const [startTime, setStartTime] = useState(() => isoToLocalInput(action?.startTime))
-  const [endTime, setEndTime] = useState(() => isoToLocalInput(action?.endTime))
-  const [content, setContent] = useState(() => action?.content || '')
-  const [feeling, setFeeling] = useState(() => getActionFeelingText(action))
-  const [celebration, setCelebration] = useState(() => action?.celebration || '')
-  const [nextAction, setNextAction] = useState(() => action?.nextAction || action?.notes || '')
-  const [motivationalFeelings, setMotivationalFeelings] = useState(() => normalizeMotivationalFeelings(action?.motivationalFeelings))
+  const [draft, setDraft] = useState(() => createDraft(action))
+
+  useEffect(() => {
+    saveReviewDraft('action', action, draft)
+  }, [action, draft])
 
   function formatExpectedDuration(minutesValue) {
     const minutes = Number(minutesValue)
@@ -41,15 +58,15 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
   }
 
   function buildPatch() {
-    const parsedStart = new Date(startTime)
+    const parsedStart = new Date(draft.startTime)
     if (Number.isNaN(parsedStart.getTime())) {
       window.alert('开始时间格式不正确')
       return null
     }
 
     let parsedEnd = null
-    if (endTime) {
-      parsedEnd = new Date(endTime)
+    if (draft.endTime) {
+      parsedEnd = new Date(draft.endTime)
       if (Number.isNaN(parsedEnd.getTime())) {
         window.alert('结束时间格式不正确')
         return null
@@ -63,21 +80,21 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
     return {
       startTime: parsedStart.toISOString(),
       endTime: parsedEnd ? parsedEnd.toISOString() : null,
-      content,
-      nextAction,
-      scores: { arousal: Number(arousal), valence: Number(valence) },
-      feeling,
-      rant: feeling,
+      content: draft.content,
+      nextAction: draft.nextAction,
+      scores: { arousal: Number(draft.arousal), valence: Number(draft.valence) },
+      feeling: draft.feeling,
+      rant: draft.feeling,
       bingo: '',
-      celebration,
-      motivationalFeelings,
+      celebration: draft.celebration,
+      motivationalFeelings: draft.motivationalFeelings,
     }
   }
 
   function handleSave() {
     if (!action) return
 
-    if (!startTime) {
+    if (!draft.startTime) {
       window.alert('请填写开始时间')
       return
     }
@@ -85,12 +102,14 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
     const patch = buildPatch()
     if (!patch) return
     const updated = updateAction(action.id, patch)
+    if (!updated) return
+    clearReviewDraft('action', action.id)
     if (onSave) onSave(updated)
   }
 
   function handleOpenWorkExperience() {
     if (!action) return
-    if (!startTime) {
+    if (!draft.startTime) {
       window.alert('请先填写开始时间，再进入工作经验页面')
       return
     }
@@ -98,7 +117,9 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
     const patch = buildPatch()
     if (!patch) return
 
-    updateAction(action.id, patch)
+    const updated = updateAction(action.id, patch)
+    if (!updated) return
+    clearReviewDraft('action', action.id)
 
     const basePath = location.pathname.startsWith('/action') ? '/action' : '/goal'
     const returnTo = `${basePath}/${action.goalId}?reviewAction=${action.id}`
@@ -135,8 +156,8 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
                 <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>开始时间</div>
                 <input
                   type="datetime-local"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
+                  value={draft.startTime}
+                  onChange={(e) => setDraft((current) => ({ ...current, startTime: e.target.value }))}
                   title="开始时间"
                   style={{ width: '100%' }}
                 />
@@ -145,8 +166,8 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
                 <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>结束时间（可选）</div>
                 <input
                   type="datetime-local"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
+                  value={draft.endTime}
+                  onChange={(e) => setDraft((current) => ({ ...current, endTime: e.target.value }))}
                   title="结束时间（可选）"
                   style={{ width: '100%' }}
                 />
@@ -161,16 +182,16 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
               type="range"
               min="0"
               max="10"
-              value={arousal}
-              onChange={(e) => setArousal(e.target.value)}
+              value={draft.arousal}
+              onChange={(e) => setDraft((current) => ({ ...current, arousal: e.target.value }))}
             />
             <input
               className="score-number"
               type="number"
               min="0"
               max="10"
-              value={arousal}
-              onChange={(e) => setArousal(e.target.value)}
+              value={draft.arousal}
+              onChange={(e) => setDraft((current) => ({ ...current, arousal: e.target.value }))}
             />
           </div>
 
@@ -180,16 +201,16 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
               type="range"
               min="-10"
               max="10"
-              value={valence}
-              onChange={(e) => setValence(e.target.value)}
+              value={draft.valence}
+              onChange={(e) => setDraft((current) => ({ ...current, valence: e.target.value }))}
             />
             <input
               className="score-number"
               type="number"
               min="-10"
               max="10"
-              value={valence}
-              onChange={(e) => setValence(e.target.value)}
+              value={draft.valence}
+              onChange={(e) => setDraft((current) => ({ ...current, valence: e.target.value }))}
             />
           </div>
         </div>
@@ -200,28 +221,28 @@ function ActionReviewForm({ action, onSave, onCancel } = {}) {
           <div className="review-areas">
             <div className="review-area">
               <div className="review-area-title">行动内容</div>
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} placeholder="这次具体做了什么？开始行动时写下的预期也会合并到这里。（可选）" />
+              <textarea value={draft.content} onChange={(e) => setDraft((current) => ({ ...current, content: e.target.value }))} placeholder="这次具体做了什么？开始行动时写下的预期也会合并到这里。（可选）" />
             </div>
 
             <div className="review-area">
               <div className="review-area-title">行动感受</div>
-              <textarea value={feeling} onChange={(e) => setFeeling(e.target.value)} placeholder="记录卡住、不满、满足、愉悦或成就感等真实感受。（可选）" />
+              <textarea value={draft.feeling} onChange={(e) => setDraft((current) => ({ ...current, feeling: e.target.value }))} placeholder="记录卡住、不满、满足、愉悦或成就感等真实感受。（可选）" />
             </div>
           </div>
 
           <div className="review-inline">
             <label className="review-inline-label">庆祝小活动</label>
-            <input type="text" value={celebration} onChange={(e) => setCelebration(e.target.value)} placeholder="例如：喝杯好茶 / 出门走走" />
+            <input type="text" value={draft.celebration} onChange={(e) => setDraft((current) => ({ ...current, celebration: e.target.value }))} placeholder="例如：喝杯好茶 / 出门走走" />
           </div>
 
           <div className="review-area" style={{ marginTop: 10 }}>
             <div className="review-area-title">下一步行动</div>
-            <textarea value={nextAction} onChange={(e) => setNextAction(e.target.value)} placeholder="例如：明天先完成提纲，再专注 30 分钟写正文" />
+            <textarea value={draft.nextAction} onChange={(e) => setDraft((current) => ({ ...current, nextAction: e.target.value }))} placeholder="例如：明天先完成提纲，再专注 30 分钟写正文" />
           </div>
         </div>
       </div>
 
-      <MotivationalFeelingsEditor value={motivationalFeelings} onChange={setMotivationalFeelings} />
+      <MotivationalFeelingsEditor value={draft.motivationalFeelings} onChange={(motivationalFeelings) => setDraft((current) => ({ ...current, motivationalFeelings }))} />
 
       <div className="review-actions">
         <button className="small-btn ghost" onClick={handleOpenWorkExperience}>工作经验</button>

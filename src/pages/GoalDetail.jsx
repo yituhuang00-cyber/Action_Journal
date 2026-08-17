@@ -244,8 +244,7 @@ export default function GoalDetail() {
   }
 
   function handleReviewSaved() {
-    setCurrentActionForReview(null)
-    setReviewModalOpen(false)
+    closeReviewModal()
     load()
   }
 

@@ -2,6 +2,7 @@ import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase.js'
 import { normalizeActionRecord, normalizeExerciseRecord } from '../lib/actionRecord.js'
 
 const LEGACY_APP_STATE_TABLE = 'app_states'
+const VERSIONED_STATE_RPC = 'save_app_state_if_revision'
 
 const TABLES = {
   userSettings: 'user_settings',
@@ -596,6 +597,90 @@ export async function fetchLegacyCloudState(userId) {
   }
 
   return data?.state || null
+}
+
+function normalizeCloudRevision(value) {
+  const revision = Number(value)
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0
+}
+
+function isVersionedSyncSchemaError(error) {
+  const code = String(error?.code || '').toUpperCase()
+  const message = String(error?.message || '').toLowerCase()
+  return code === 'PGRST202'
+    || code === 'PGRST204'
+    || message.includes('sync_revision')
+    || message.includes(VERSIONED_STATE_RPC)
+}
+
+function createVersionedSyncSchemaError(cause) {
+  const error = new Error('云端同步结构尚未升级。请先执行最新的 supabase/schema.sql，旧设备数据已停止上传以避免覆盖新数据。')
+  error.code = 'SYNC_SCHEMA_OUTDATED'
+  error.cause = cause
+  return error
+}
+
+export class CloudRevisionConflictError extends Error {
+  constructor(currentRevision) {
+    super('云端已有其他设备更新，本机旧版本未上传。')
+    this.name = 'CloudRevisionConflictError'
+    this.code = 'CLOUD_REVISION_CONFLICT'
+    this.currentRevision = normalizeCloudRevision(currentRevision)
+  }
+}
+
+export function isCloudRevisionConflict(error) {
+  return error?.code === 'CLOUD_REVISION_CONFLICT'
+}
+
+export async function fetchVersionedCloudState(userId) {
+  if (!userId || !isSupabaseConfigured()) return null
+  const client = getSupabaseClient()
+  if (!client) return null
+
+  const { data, error } = await client
+    .from(LEGACY_APP_STATE_TABLE)
+    .select('state,sync_revision,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) {
+    if (isVersionedSyncSchemaError(error)) throw createVersionedSyncSchemaError(error)
+    throw error
+  }
+
+  if (!data) return null
+  return {
+    state: data.state || {},
+    revision: normalizeCloudRevision(data.sync_revision),
+    updatedAt: data.updated_at || '',
+  }
+}
+
+export async function persistVersionedCloudState(userId, state, expectedRevision) {
+  if (!userId || !isSupabaseConfigured()) return null
+  const client = getSupabaseClient()
+  if (!client) return null
+
+  const { data, error } = await client.rpc(VERSIONED_STATE_RPC, {
+    p_expected_revision: normalizeCloudRevision(expectedRevision),
+    p_state: state,
+  })
+
+  if (error) {
+    if (isVersionedSyncSchemaError(error)) throw createVersionedSyncSchemaError(error)
+    throw error
+  }
+
+  const result = Array.isArray(data) ? data[0] : data
+  if (!result?.saved) {
+    throw new CloudRevisionConflictError(result?.revision)
+  }
+
+  return {
+    revision: normalizeCloudRevision(result.revision),
+    updatedAt: result.cloud_updated_at || '',
+  }
 }
 
 async function upsertRows(client, table, rows, onConflict) {

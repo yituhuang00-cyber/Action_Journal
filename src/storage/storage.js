@@ -10,10 +10,11 @@ import {
   normalizeMotivationalFeelings,
 } from '../lib/motivationalFeelings.js'
 import {
-  fetchLegacyCloudState,
   fetchNormalizedState,
+  fetchVersionedCloudState,
   getSyncStatus,
-  persistNormalizedState,
+  isCloudRevisionConflict,
+  persistVersionedCloudState,
   setSyncStatus,
   STORAGE_STATUS_EVENT,
 } from './cloudSync.js'
@@ -23,6 +24,7 @@ import {
   EMPTY_SYNC_META,
   normalizeSyncMeta,
 } from './syncMeta.js'
+import { decideVersionedStartupSync } from './syncPolicy.js'
 
 const STORAGE_KEY = 'action-journal:state'
 const STORAGE_OWNER_KEY = 'action-journal:state-owner'
@@ -51,6 +53,8 @@ let memoryState = null
 let initializationPromise = null
 let currentUserId = null
 let remoteWriteChain = Promise.resolve()
+let remoteWriteGeneration = 0
+let activeCloudRevision = null
 
 function hasBrowserStorage() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined'
@@ -106,14 +110,16 @@ function writeLocalSyncMeta(nextMeta) {
 }
 
 function markLocalStatePending() {
-  return writeLocalSyncMeta(createPendingSyncMeta(readLocalSyncMeta()))
+  const currentMeta = readLocalSyncMeta()
+  const baseCloudRevision = Number.isSafeInteger(activeCloudRevision)
+    ? activeCloudRevision
+    : currentMeta.cloudRevision
+  return writeLocalSyncMeta(createPendingSyncMeta(currentMeta, new Date().toISOString(), baseCloudRevision))
 }
 
-function markLocalStateSynced(syncedRevision, syncedAt = new Date().toISOString()) {
-  const result = createSyncedSyncMeta(readLocalSyncMeta(), syncedRevision, syncedAt)
-  if (result.completed) {
-    writeLocalSyncMeta(result.meta)
-  }
+function markLocalStateSynced(syncedRevision, cloudRevision, syncedAt = new Date().toISOString()) {
+  const result = createSyncedSyncMeta(readLocalSyncMeta(), syncedRevision, syncedAt, cloudRevision)
+  writeLocalSyncMeta(result.meta)
   return result.completed
 }
 
@@ -460,6 +466,8 @@ function countMeaningfulData(state) {
     'weeklyPlans',
     'dailyPlans',
     'dailyAchievements',
+    'dailyFlames',
+    'flameEntries',
   ].reduce((total, key) => total + Object.keys(state[key] || {}).length, 0)
 }
 
@@ -504,15 +512,16 @@ function persistLocalState(state, { emit = true, ownerId = currentUserId || read
   return nextState
 }
 
-async function persistRemoteStateForUser(userId, state) {
-  return persistNormalizedState(userId, state)
+async function persistRemoteStateForUser(userId, state, expectedCloudRevision) {
+  return persistVersionedCloudState(userId, state, expectedCloudRevision)
 }
 
-function publishSuccessfulSync(userId, syncedRevision) {
+function publishSuccessfulSync(userId, syncedRevision, cloudRevision) {
   if (currentUserId !== userId) return false
 
   const syncedAt = new Date().toISOString()
-  if (!markLocalStateSynced(syncedRevision, syncedAt)) {
+  activeCloudRevision = cloudRevision
+  if (!markLocalStateSynced(syncedRevision, cloudRevision, syncedAt)) {
     setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
     return false
   }
@@ -521,21 +530,86 @@ function publishSuccessfulSync(userId, syncedRevision) {
   return true
 }
 
-function commitSyncedSnapshot(userId, state, syncedRevision, { emit = true } = {}) {
+function commitSyncedSnapshot(
+  userId,
+  state,
+  syncedRevision,
+  cloudRevision,
+  { emit = true, cloudWriteCompleted = false } = {},
+) {
   const latestMeta = readLocalSyncMeta()
   if (currentUserId !== userId || latestMeta.localRevision > syncedRevision) {
     if (currentUserId === userId) {
-      setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
+      if (cloudWriteCompleted) {
+        publishSuccessfulSync(userId, syncedRevision, cloudRevision)
+      } else {
+        setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
+      }
     }
     return readState()
   }
 
   const nextState = persistLocalState(state, { emit, ownerId: userId })
-  publishSuccessfulSync(userId, syncedRevision)
+  publishSuccessfulSync(userId, syncedRevision, cloudRevision)
   return nextState
 }
 
-async function uploadLocalSnapshot(userId, state, syncedRevision, options) {
+function pickMigrationState(versionedState, normalizedState) {
+  if (hasMeaningfulData(normalizedState)) return normalizedState
+  if (hasMeaningfulData(versionedState)) return versionedState
+  return normalizedState || versionedState || null
+}
+
+async function fetchAuthoritativeCloudSnapshot(userId) {
+  const versionedSnapshot = await fetchVersionedCloudState(userId)
+  if (versionedSnapshot?.revision > 0) return versionedSnapshot
+
+  const normalizedState = await fetchNormalizedState(userId)
+  const migrationState = pickMigrationState(versionedSnapshot?.state, normalizedState)
+  if (!migrationState) return null
+
+  try {
+    const saved = await persistRemoteStateForUser(
+      userId,
+      migrationState,
+      versionedSnapshot?.revision || 0,
+    )
+    return { state: migrationState, revision: saved.revision, updatedAt: saved.updatedAt }
+  } catch (error) {
+    if (!isCloudRevisionConflict(error)) throw error
+    return fetchVersionedCloudState(userId)
+  }
+}
+
+function adoptCloudPreferredSnapshot(userId, snapshot, syncedRevision, reason = 'cloud-version-conflict') {
+  writeLocalSafetyBackup(reason, readLocalState(), userId)
+  const nextState = commitSyncedSnapshot(
+    userId,
+    snapshot.state,
+    syncedRevision,
+    snapshot.revision,
+  )
+
+  if (!readLocalSyncMeta().pending) {
+    setSyncStatus({
+      phase: 'conflict',
+      pending: false,
+      lastError: '检测到其他设备上的较新版本，已采用云端数据；本机冲突数据已安全备份。',
+    })
+  }
+
+  return nextState
+}
+
+async function adoptLatestCloudState(userId, syncedRevision) {
+  const snapshot = await fetchAuthoritativeCloudSnapshot(userId)
+  if (!snapshot) {
+    throw new Error('云端版本发生变化，但暂时无法读取最新数据。')
+  }
+  return adoptCloudPreferredSnapshot(userId, snapshot, syncedRevision)
+}
+
+async function uploadLocalSnapshot(userId, state, syncedRevision, expectedCloudRevision, options) {
   let targetRevision = syncedRevision
   if (currentUserId === userId) {
     writeLocalOwner(userId)
@@ -551,10 +625,22 @@ async function uploadLocalSnapshot(userId, state, syncedRevision, options) {
   const snapshot = cloneState(state)
   const writePromise = remoteWriteChain
     .catch(() => undefined)
-    .then(() => persistRemoteStateForUser(userId, snapshot))
+    .then(() => persistRemoteStateForUser(userId, snapshot, expectedCloudRevision))
   remoteWriteChain = writePromise
-  await writePromise
-  return commitSyncedSnapshot(userId, state, targetRevision, options)
+  try {
+    const saved = await writePromise
+    return commitSyncedSnapshot(
+      userId,
+      state,
+      targetRevision,
+      saved.revision,
+      { ...options, cloudWriteCompleted: true },
+    )
+  } catch (error) {
+    if (!isCloudRevisionConflict(error)) throw error
+    remoteWriteGeneration += 1
+    return adoptLatestCloudState(userId, targetRevision)
+  }
 }
 
 function queueRemoteWrite(state, syncedRevision = readLocalSyncMeta().localRevision) {
@@ -562,16 +648,33 @@ function queueRemoteWrite(state, syncedRevision = readLocalSyncMeta().localRevis
   if (!userId) return remoteWriteChain
 
   const snapshot = cloneState(state)
+  const writeGeneration = remoteWriteGeneration
   setSyncStatus({ phase: 'syncing', pending: true, lastError: '' })
   remoteWriteChain = remoteWriteChain
     .catch(() => undefined)
-    .then(() => persistRemoteStateForUser(userId, snapshot))
-    .then(() => {
-      publishSuccessfulSync(userId, syncedRevision)
+    .then(async () => {
+      if (currentUserId !== userId || remoteWriteGeneration !== writeGeneration) return
+      const expectedCloudRevision = Number.isSafeInteger(activeCloudRevision)
+        ? activeCloudRevision
+        : readLocalSyncMeta().cloudRevision
+      const saved = await persistRemoteStateForUser(userId, snapshot, expectedCloudRevision)
+      if (currentUserId !== userId || remoteWriteGeneration !== writeGeneration) return
+      publishSuccessfulSync(userId, syncedRevision, saved.revision)
     })
-    .catch((error) => {
+    .catch(async (error) => {
       console.error('同步云端数据失败', error)
       const latestMeta = readLocalSyncMeta()
+      if (isCloudRevisionConflict(error) && currentUserId === userId && remoteWriteGeneration === writeGeneration) {
+        remoteWriteGeneration += 1
+        try {
+          await adoptLatestCloudState(userId, latestMeta.localRevision)
+        } catch (refreshError) {
+          console.error('读取冲突后的云端数据失败', refreshError)
+          setSyncStatus({ phase: 'error', pending: true, lastError: refreshError.message || '读取云端最新数据失败' })
+        }
+        return
+      }
+
       if (currentUserId === userId && latestMeta.localRevision === syncedRevision) {
         setSyncStatus({ phase: 'error', pending: true, lastError: error.message || '同步云端数据失败' })
       }
@@ -600,8 +703,10 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
     const activeSession = await getSessionFromClient(session)
 
     if (!isSupabaseConfigured() || !activeSession?.user?.id) {
+      if (currentUserId) remoteWriteGeneration += 1
       currentUserId = activeSession?.user?.id || null
       memoryState = readLocalState()
+      activeCloudRevision = readLocalSyncMeta().cloudRevision
       setSyncStatus({
         phase: isSupabaseConfigured() ? 'signed-out' : 'not-configured',
         pending: false,
@@ -615,66 +720,64 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
       return memoryState
     }
 
+    if (currentUserId !== userId) {
+      remoteWriteGeneration += 1
+      activeCloudRevision = null
+    }
     currentUserId = userId
     setSyncStatus({ phase: 'loading', pending: true, lastError: '' })
 
     const fetchStartedAtRevision = readLocalSyncMeta().localRevision
-    const normalizedRemoteState = await fetchNormalizedState(userId)
+    const remoteSnapshot = await fetchAuthoritativeCloudSnapshot(userId)
     if (currentUserId !== userId) return readState()
 
-    if (normalizedRemoteState) {
+    if (remoteSnapshot) {
       const localState = readLocalState()
       const localOwner = readLocalOwner()
       const localSyncMeta = readLocalSyncMeta()
       const localDataCount = countMeaningfulData(localState)
-      const remoteDataCount = countMeaningfulData(normalizedRemoteState)
+      const remoteDataCount = countMeaningfulData(remoteSnapshot.state)
       const localChangedWhileFetching = localSyncMeta.localRevision !== fetchStartedAtRevision
-      const hasVersionedPendingChange = localSyncMeta.pending
-        && localSyncMeta.localRevision > localSyncMeta.syncedRevision
+      const startupAction = decideVersionedStartupSync({
+        userId,
+        localOwner,
+        localPending: localSyncMeta.pending,
+        localChangedWhileFetching,
+        localCloudRevision: localSyncMeta.cloudRevision,
+        remoteRevision: remoteSnapshot.revision,
+      })
 
-      if (
-        localOwner === userId
-        && (localSyncMeta.pending || localChangedWhileFetching)
-        && (localDataCount > 0 || remoteDataCount === 0 || hasVersionedPendingChange)
-      ) {
-        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
+      if (startupAction === 'upload-local') {
+        return uploadLocalSnapshot(
+          userId,
+          localState,
+          localSyncMeta.localRevision,
+          remoteSnapshot.revision,
+        )
       }
 
-      if (remoteDataCount === 0 && localDataCount > 0 && (!localOwner || localOwner === userId)) {
-        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
-      }
-
-      if (localOwner === userId && localSyncMeta.pending) {
-        if (localDataCount === 0 && remoteDataCount > 0) {
-          console.warn('Skipped syncing empty local state over existing cloud data.')
-          return commitSyncedSnapshot(userId, normalizedRemoteState, localSyncMeta.localRevision)
-        }
-
-        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
+      if (startupAction === 'adopt-cloud-conflict') {
+        return adoptCloudPreferredSnapshot(
+          userId,
+          remoteSnapshot,
+          localSyncMeta.localRevision,
+        )
       }
 
       if (localDataCount > remoteDataCount) {
         writeLocalSafetyBackup('before-cloud-refresh', localState, localOwner || userId)
       }
-      return commitSyncedSnapshot(userId, normalizedRemoteState, localSyncMeta.localRevision)
+      return commitSyncedSnapshot(
+        userId,
+        remoteSnapshot.state,
+        localSyncMeta.localRevision,
+        remoteSnapshot.revision,
+      )
     }
 
-    const legacyCloudState = await fetchLegacyCloudState(userId)
-    if (currentUserId !== userId) return readState()
     const localState = readLocalState()
     const localOwner = readLocalOwner()
     const localSyncMeta = readLocalSyncMeta()
-    const localChangedWhileFetching = localSyncMeta.localRevision !== fetchStartedAtRevision
-
-    if (legacyCloudState) {
-      if (localOwner === userId && (localSyncMeta.pending || localChangedWhileFetching) && hasMeaningfulData(localState)) {
-        return uploadLocalSnapshot(userId, localState, localSyncMeta.localRevision)
-      }
-
-      const nextState = persistLocalState(legacyCloudState, { ownerId: userId })
-      return uploadLocalSnapshot(userId, nextState, localSyncMeta.localRevision, { emit: false })
-    }
-
     const seedState = hasMeaningfulData(localState) && (!localOwner || localOwner === userId)
       ? localState
       : createDefaultState()
@@ -684,7 +787,7 @@ export async function initializeStorage({ session, forceRefresh = false } = {}) 
     }
 
     const nextState = persistLocalState(seedState, { ownerId: userId })
-    return uploadLocalSnapshot(userId, nextState, localSyncMeta.localRevision, { emit: false })
+    return uploadLocalSnapshot(userId, nextState, localSyncMeta.localRevision, 0, { emit: false })
   })()
     .catch((error) => {
       console.error('初始化云端存储失败', error)
